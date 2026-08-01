@@ -11,9 +11,11 @@ scope, or claim generalization to industrial environments outside XJTU-SY.
 
 ## Current status
 
-The current implementation is Phase 1: dataset discovery, loading, metadata construction, and
-audit reporting. Feature extraction, health indicators, PELT change-point estimation, classical
-machine-learning models, temporal deep learning, and model evaluation are not implemented yet.
+Phase 1 provides dataset discovery, loading, metadata construction, and exhaustive audit
+reporting. Phase 2 adds incremental time- and frequency-domain feature extraction plus
+reproducible exploratory degradation figures. Health indicators, PELT change-point estimation,
+classical machine-learning models, temporal deep learning, and model evaluation are not
+implemented yet.
 
 A preliminary read-only inspection found the expected three operating-condition directories,
 15 bearing directories, and 9,216 acquisition CSV files. The per-bearing counts are documented
@@ -90,6 +92,59 @@ Critical validation errors gate downstream work. Do not extract features or trai
 audit reports a critical error. Warnings and any explainable numbering irregularities must be
 retained in the generated report rather than silently ignored.
 
+## Build Phase-2 vibration features
+
+Phase 2 consumes the validated `outputs/audits/metadata.parquet` manifest and reads one raw
+acquisition at a time. Run it only after the Phase-1 audit passes:
+
+```bash
+uv run xjtu-sy-build-features --config configs/features.yaml
+```
+
+Use `--skip-plots` for a tables-only benchmark and `--force` to discard a safe partial extraction
+checkpoint. The command logs JSON progress records, exits nonzero on processing or validation
+failure, and writes:
+
+```text
+outputs/features/features.parquet
+outputs/features/feature_validation.json
+outputs/features/feature_summary.csv
+outputs/figures/exploratory/condition_<id>/<bearing>/
+```
+
+The final table has one row per acquisition. Identifier and operating-context columns are kept for
+traceability and future bearing-level splits. `rul_minutes` is explicitly a supervised target,
+not an input feature. The configured production schema contains 52 vibration features: 15 time
+features, seven general spectral features, and four band powers for each of two channels.
+
+Time-domain definitions use population moments: standard deviation and variance use `ddof=0`, RMS
+is the square root of mean squared amplitude, energy is the sum of squared amplitudes, and
+kurtosis is Pearson kurtosis (`m4 / m2²`, not excess kurtosis). Crest, shape, impulse, and
+clearance factors follow their standard amplitude-ratio definitions. Frequency features use a
+Hann-window Welch PSD with segment length, overlap, and frequency bands declared in
+`configs/features.yaml`. Spectral entropy is normalized to `[0, 1]`.
+
+Computations parse signals as `float32` and accumulate scalar statistics in `float64`. A zero
+denominator or zero-power spectrum produces `NaN` because the corresponding quantity is
+mathematically undefined; it is never silently replaced by zero. Any such non-finite feature in
+the experimental output is a critical validation error. Configured band edges may not exceed the
+Nyquist frequency.
+
+The pipeline keeps only one acquisition array in memory, while scalar rows and an atomic Parquet
+checkpoint support bounded processing and safe restart. The validation report checks manifest
+alignment, uniqueness, required columns, finite and plausible feature values, monotonic time,
+nonnegative RUL, and final RUL zero. Runtime and peak resident memory are recorded in that report.
+
+The reference full run on the local 9,216-file dataset completed feature extraction in 132.3
+seconds with a measured peak resident memory of 340,787,200 bytes (325 MiB). Generating all plots
+took approximately another 33 seconds. These are local benchmark observations, not portable
+performance guarantees; storage speed, CPU, SciPy version, and an existing Matplotlib font cache
+affect runtime.
+
+Each bearing receives unsmoothed RMS, kurtosis, crest-factor, energy, and RUL trajectories, plus
+combined time-series/PSD figures for its first, middle, and final acquisitions. PNG files use the
+configured DPI and PDF counterparts preserve vector content.
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition
@@ -128,6 +183,7 @@ Other current limitations include:
 - No official label identifies the exact onset of degradation.
 - Nominal operating conditions come from dataset documentation and directory labels rather than
   per-acquisition measurements.
-- Phase 1 establishes data integrity and metadata only; it provides no predictive result.
+- Phases 1 and 2 establish data integrity, scalar vibration features, and exploratory figures;
+  they provide no predictive RUL result.
 - Conclusions must remain limited to the 15 XJTU-SY run-to-failure bearings and their three
   operating conditions.

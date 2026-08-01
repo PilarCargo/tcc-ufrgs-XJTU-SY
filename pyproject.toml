@@ -12,10 +12,14 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=15",
     "PyYAML>=6.0.1",
+    "scipy>=1.13",
+    "matplotlib>=3.9",
+    "psutil>=6.0",
 ]
 
 [project.scripts]
 xjtu-sy-audit = "xjtu_sy_tcc.cli.audit:main"
+xjtu-sy-build-features = "xjtu_sy_tcc.cli.features:main"
 
 [dependency-groups]
 dev = [

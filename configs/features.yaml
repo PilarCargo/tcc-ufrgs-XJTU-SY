@@ -1,0 +1,22 @@
+project_root: ..
+metadata_path: outputs/audits/metadata.parquet
+output_directory: outputs/features
+figure_directory: outputs/figures/exploratory
+welch_nperseg: 2048
+welch_overlap: 1024
+frequency_bands_hz:
+  - name: low_0_1khz
+    lower_hz: 0.0
+    upper_hz: 1000.0
+  - name: mid_1_5khz
+    lower_hz: 1000.0
+    upper_hz: 5000.0
+  - name: high_5_10khz
+    lower_hz: 5000.0
+    upper_hz: 10000.0
+  - name: very_high_10_12_8khz
+    lower_hz: 10000.0
+    upper_hz: 12800.0
+plot_dpi: 200
+generate_pdf: true
+progress_interval: 100
