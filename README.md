@@ -145,6 +145,33 @@ Each bearing receives unsmoothed RMS, kurtosis, crest-factor, energy, and RUL tr
 combined time-series/PSD figures for its first, middle, and final acquisitions. PNG files use the
 configured DPI and PDF counterparts preserve vector content.
 
+## Run Phase 3 degradation analysis
+
+Phase 3 creates complete-bearing folds, evaluates prognostic feature quality, fits leakage-free
+fold health indicators, and estimates degradation onset with PELT:
+
+```bash
+uv run xjtu-sy-run-phase3 --config configs/phase3.yaml
+```
+
+Use `--skip-plots` for tables only. Outputs are separated under `outputs/splits/`,
+`outputs/prognostics/`, `outputs/degradation/`, and `outputs/figures/degradation/`.
+
+Feature selection, transformations, robust scaling, PCA, orientation, and parameter selection use
+only permitted training or training-plus-validation bearings. Test bearings never affect fitted
+preprocessing or configuration selection. Their first 10% may calibrate their own baseline as an
+explicit initial calibration period.
+
+Every PELT result is an **estimated degradation onset**, not an official XJTU-SY label. Phase 3
+reports stability, persistence, robust effect, and physical plausibility rather than accuracy.
+It does not produce RUL predictions. Exact formulas, edge policies, leakage controls, and
+limitations are in [docs/phase3_methodology.md](docs/phase3_methodology.md).
+
+The reference exhaustive Phase 3 run evaluated 5,760 sensitivity rows and completed in 409.9
+seconds with approximately 556 MB resident memory. A restart using the matching validated
+sensitivity artifact completed tables and all 44 PNG/PDF figure files in about 10 seconds. These
+local timings are not portable performance guarantees.
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition
@@ -183,7 +210,7 @@ Other current limitations include:
 - No official label identifies the exact onset of degradation.
 - Nominal operating conditions come from dataset documentation and directory labels rather than
   per-acquisition measurements.
-- Phases 1 and 2 establish data integrity, scalar vibration features, and exploratory figures;
-  they provide no predictive RUL result.
+- Phases 1 through 3 establish integrity, features, health indicators, and unsupervised estimated
+  degradation onsets; they provide no predictive RUL result.
 - Conclusions must remain limited to the 15 XJTU-SY run-to-failure bearings and their three
   operating conditions.

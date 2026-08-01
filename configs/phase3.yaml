@@ -1,0 +1,41 @@
+project_root: ..
+feature_table: outputs/features/features.parquet
+output_root: outputs
+figure_directory: outputs/figures
+expected_rows: 9216
+expected_feature_count: 52
+interpolation_grid_size: 101
+initial_window_fraction: 0.1
+final_window_fraction: 0.1
+selected_feature_count: 10
+metric_weights:
+  monotonicity: 0.2
+  trendability: 0.2
+  prognosability: 0.2
+  spearman_abs: 0.2
+  stability: 0.2
+transformation:
+  mode: auto_log1p_nonnegative
+  feature_tokens: [variance, rms, max_abs, peak_to_peak, kurtosis, energy, crest_factor, impulse_factor, clearance_factor, spectral_power, band_power]
+balance_points_per_bearing: 100
+pca_components: 3
+baseline_fraction: 0.1
+minimum_baseline_acquisitions: 5
+smoothing_method: median
+primary_smoothing_window: 7
+pelt:
+  primary_cost_model: rbf
+  primary_penalty: 5.0
+  primary_minimum_segment_size: 10
+  primary_jump: 5
+  primary_persistence_window: 10
+  minimum_effect_size: 1.0
+  cost_models: [rbf, l2]
+  penalties: [1.0, 3.0, 5.0, 8.0]
+  smoothing_windows: [5, 7, 11]
+  minimum_segment_sizes: [5, 10]
+  persistence_windows: [5, 10]
+  agreement_minutes: 10.0
+  agreement_life_fraction: 0.05
+plot_dpi: 200
+generate_pdf: true
