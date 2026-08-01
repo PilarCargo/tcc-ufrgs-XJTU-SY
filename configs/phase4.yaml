@@ -1,0 +1,29 @@
+project_root: ..
+feature_table: outputs/features/features.parquet
+split_manifest: outputs/splits/folds.json
+selected_feature_manifest: outputs/prognostics/selected_features_by_fold.json
+test_onset_table: outputs/degradation/estimated_onsets.parquet
+output_directory: outputs/rul
+expected_feature_rows: 9216
+expected_feature_count: 52
+expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
+target_column: rul_minutes
+sample_weight_policy: inverse_bearing_frequency
+random_seed: 42
+primary_metric: validation_macro_mae
+prediction_policy: non_negative_primary_preserve_raw
+heavy_tail_feature_tokens: [variance, rms, max_abs, peak_to_peak, kurtosis, energy, crest_factor, impulse_factor, clearance_factor, spectral_power, band_power]
+ridge_alphas: [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+random_forest_candidates:
+  - {n_estimators: 200, max_depth: null, min_samples_leaf: 1, max_features: sqrt}
+  - {n_estimators: 250, max_depth: 12, min_samples_leaf: 3, max_features: 0.7}
+  - {n_estimators: 250, max_depth: 20, min_samples_leaf: 5, max_features: 1.0}
+hist_gradient_boosting_candidates:
+  - {learning_rate: 0.05, max_iter: 200, max_leaf_nodes: 31, min_samples_leaf: 20, l2_regularization: 0.0}
+  - {learning_rate: 0.05, max_iter: 300, max_leaf_nodes: 15, min_samples_leaf: 30, l2_regularization: 1.0}
+  - {learning_rate: 0.1, max_iter: 150, max_leaf_nodes: 31, min_samples_leaf: 20, l2_regularization: 1.0}
+permutation_repeats: 5
+life_stage_thresholds: [0.33, 0.66]
+plot_dpi: 200
+generate_pdf: true

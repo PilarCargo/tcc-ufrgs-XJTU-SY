@@ -11,11 +11,9 @@ scope, or claim generalization to industrial environments outside XJTU-SY.
 
 ## Current status
 
-Phase 1 provides dataset discovery, loading, metadata construction, and exhaustive audit
-reporting. Phase 2 adds incremental time- and frequency-domain feature extraction plus
-reproducible exploratory degradation figures. Health indicators, PELT change-point estimation,
-classical machine-learning models, temporal deep learning, and model evaluation are not
-implemented yet.
+Phases 1 through 4 are implemented and validated on the real dataset: integrity audit, vibration
+features, leakage-free degradation analysis, and classical unseen-bearing RUL regression. Deep
+learning remains outside the implemented scope.
 
 A preliminary read-only inspection found the expected three operating-condition directories,
 15 bearing directories, and 9,216 acquisition CSV files. The per-bearing counts are documented
@@ -172,6 +170,33 @@ seconds with approximately 556 MB resident memory. A restart using the matching 
 sensitivity artifact completed tables and all 44 PNG/PDF figure files in about 10 seconds. These
 local timings are not portable performance guarantees.
 
+## Run Phase 4 classical RUL regression
+
+Phase 4 reuses the immutable five complete-bearing folds and selects every candidate using only
+the three validation bearings in its fold:
+
+```bash
+uv run xjtu-sy-run-phase4 --config configs/phase4.yaml
+```
+
+Use `--skip-plots` for model and table generation only, and `--force-train` to disregard a
+compatible validated cache. The command evaluates a median dummy baseline, a time-only Ridge
+baseline, and Ridge, Random Forest, and histogram gradient boosting over fold-selected or all
+vibration features. A secondary Ridge ablation combines selected vibration features with elapsed
+time and known operating conditions.
+
+Absolute `rul_minutes` is the target and is never an input. Sample weights give every training
+bearing equal total influence; Ridge transformations and robust scaling are training-only; and
+candidate selection minimizes validation-bearing macro MAE. Frozen models are evaluated once on
+test bearings. Raw and non-negative predictions are both preserved.
+
+Phase 3 health indicators are omitted as predictive inputs because their baseline uses the full
+initial calibration interval and is therefore not available causally for all early acquisitions.
+The PELT estimated onset is used only as a retrospective test-result annotation, never for model
+training or selection. Outputs are written beneath `outputs/rul/`. Full definitions, the
+experiment matrix, leakage controls, metrics, and limitations are documented in
+[docs/phase4_methodology.md](docs/phase4_methodology.md).
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition
@@ -210,7 +235,7 @@ Other current limitations include:
 - No official label identifies the exact onset of degradation.
 - Nominal operating conditions come from dataset documentation and directory labels rather than
   per-acquisition measurements.
-- Phases 1 through 3 establish integrity, features, health indicators, and unsupervised estimated
-  degradation onsets; they provide no predictive RUL result.
+- Phase 4 evaluates only classical regressors; it does not establish generalization beyond these
+  bearings or support causal claims about operating-condition differences.
 - Conclusions must remain limited to the 15 XJTU-SY run-to-failure bearings and their three
   operating conditions.
