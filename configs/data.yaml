@@ -1,0 +1,65 @@
+project_root: ..
+dataset_root: Data
+output_directory: outputs/audits
+nominal_values_source: Data/Introduction_to_XJTU-SY_Bearing_Dataset.pdf
+acquisition_interval_minutes: 1.0
+sampling_frequency_hz: 25600.0
+expected_sample_count: 32768
+expected_channel_names:
+  - Horizontal_vibration_signals
+  - Vertical_vibration_signals
+filename_pattern: '^(?P<acquisition_number>[1-9][0-9]*)\.csv$'
+detect_duplicate_content: true
+max_workers: 4
+conditions:
+  - condition_id: 1
+    directory_name: 35Hz12kN
+    bearing_ids:
+      - Bearing1_1
+      - Bearing1_2
+      - Bearing1_3
+      - Bearing1_4
+      - Bearing1_5
+    expected_acquisition_counts:
+      Bearing1_1: 123
+      Bearing1_2: 161
+      Bearing1_3: 158
+      Bearing1_4: 122
+      Bearing1_5: 52
+    rotation_hz: 35.0
+    rotation_rpm: 2100.0
+    radial_load_kn: 12.0
+  - condition_id: 2
+    directory_name: 37.5Hz11kN
+    bearing_ids:
+      - Bearing2_1
+      - Bearing2_2
+      - Bearing2_3
+      - Bearing2_4
+      - Bearing2_5
+    expected_acquisition_counts:
+      Bearing2_1: 491
+      Bearing2_2: 161
+      Bearing2_3: 533
+      Bearing2_4: 42
+      Bearing2_5: 339
+    rotation_hz: 37.5
+    rotation_rpm: 2250.0
+    radial_load_kn: 11.0
+  - condition_id: 3
+    directory_name: 40Hz10kN
+    bearing_ids:
+      - Bearing3_1
+      - Bearing3_2
+      - Bearing3_3
+      - Bearing3_4
+      - Bearing3_5
+    expected_acquisition_counts:
+      Bearing3_1: 2538
+      Bearing3_2: 2496
+      Bearing3_3: 371
+      Bearing3_4: 1515
+      Bearing3_5: 114
+    rotation_hz: 40.0
+    rotation_rpm: 2400.0
+    radial_load_kn: 10.0

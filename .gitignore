@@ -1,0 +1,31 @@
+# Python bytecode and environments
+__pycache__/
+*.py[cod]
+.venv/
+.tools/
+
+# Test, lint, type-check, and coverage artifacts
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Notebook artifacts
+.ipynb_checkpoints/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Immutable source data and its archive
+/Data/
+/XJTU-SY.zip
+/Important References/
+/Photographs/
+
+# Generated artifacts
+/data/interim/
+/data/processed/
+/outputs/
