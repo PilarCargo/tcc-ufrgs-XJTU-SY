@@ -11,15 +11,22 @@ scope, or claim generalization to industrial environments outside XJTU-SY.
 
 ## Current status
 
-Phases 1 through 4 are implemented and validated on the real dataset: integrity audit, vibration
-features, leakage-free degradation analysis, and classical unseen-bearing RUL regression. Deep
-learning remains outside the implemented scope.
+Phases 1 through 6 are implemented, validated, and executed on the real dataset. The repository
+contains the complete integrity audit, 52 vibration features, leakage-free degradation analysis,
+classical RUL regression, causal unidirectional LSTM experiments, and final bearing-level
+statistical consolidation. The current automated suite contains 180 passing tests.
 
-A preliminary read-only inspection found the expected three operating-condition directories,
-15 bearing directories, and 9,216 acquisition CSV files. The per-bearing counts are documented
-in [docs/dataset_structure.md](docs/dataset_structure.md). These observations are not an
-exhaustive audit result. Run the audit command below to validate every acquisition before using
-the data in any later phase.
+The exhaustive audit validated three operating conditions, 15 bearing directories, 9,216
+acquisitions, and 301,989,888 signal rows with no critical dataset errors. The per-bearing counts
+are documented in [docs/dataset_structure.md](docs/dataset_structure.md). Re-run the audit only
+when verifying a new checkout or intentionally checking the immutable source data again.
+
+The primary consolidated result is deliberately retained even though it is negative: under
+complete-bearing separation, absolute-RUL prediction, bearing-balanced development, and
+bearing-macro MAE evaluation, the evaluated vibration models and causal temporal sequences did
+not outperform the training-target median baseline on unseen XJTU-SY bearings. This result does
+not imply that vibration, artificial intelligence, or predictive maintenance is ineffective in
+other datasets or protocols.
 
 ## Local dataset
 
@@ -59,8 +66,9 @@ create the environment and install both runtime and development dependencies:
 uv sync --group dev
 ```
 
-The Phase-1 runtime dependencies are NumPy, pandas, PyArrow, and PyYAML. pytest and Ruff are
-development dependencies.
+Runtime dependencies include NumPy, pandas, PyArrow, PyYAML, SciPy, Matplotlib, psutil,
+scikit-learn, ruptures, and PyTorch. pytest and Ruff are development dependencies. PyTorch is used
+only by the Phase 5 unidirectional LSTM pipeline; Phase 6 performs no model training.
 
 For bounded local execution, configuration accepts at most eight inspection workers and each raw
 CSV is rejected before numeric parsing if it exceeds 16 MiB. The observed XJTU-SY files are below
@@ -80,8 +88,8 @@ Phase-1 metadata and audit artifacts are written beneath:
 outputs/audits/
 ```
 
-The audit checks the complete configured dataset rather than relying on the preliminary counts in
-this README. It validates paths, condition and bearing membership, numeric filename ordering,
+The audit checks the complete configured dataset rather than relying only on documented counts.
+It validates paths, condition and bearing membership, numeric filename ordering,
 sequence continuity, CSV schema and shape, numeric values, finite values, uniqueness constraints,
 documented per-bearing acquisition counts, RUL invariants, and unexpected files or directories.
 Duplicate-content checking is controlled by `detect_duplicate_content` in `configs/data.yaml`.
@@ -111,7 +119,7 @@ outputs/figures/exploratory/condition_<id>/<bearing>/
 ```
 
 The final table has one row per acquisition. Identifier and operating-context columns are kept for
-traceability and future bearing-level splits. `rul_minutes` is explicitly a supervised target,
+traceability and downstream bearing-level splits. `rul_minutes` is explicitly a supervised target,
 not an input feature. The configured production schema contains 52 vibration features: 15 time
 features, seven general spectral features, and four band powers for each of two channels.
 
@@ -197,6 +205,12 @@ training or selection. Outputs are written beneath `outputs/rul/`. Full definiti
 experiment matrix, leakage controls, metrics, and limitations are documented in
 [docs/phase4_methodology.md](docs/phase4_methodology.md).
 
+The validated Phase 4 run evaluated 185 candidates and generated 82,944 test-prediction rows. The
+median dummy achieved the best primary macro MAE, 269.63 minutes. Time-only Ridge achieved 290.76
+minutes, selected-feature Ridge 337.64 minutes, selected-feature HistGradientBoosting 384.43
+minutes, and selected-feature Random Forest 402.92 minutes. Acquisition-weighted and
+bearing-macro metrics are intentionally reported separately.
+
 ## Run Phase 5 causal LSTM regression
 
 Phase 5 evaluates whether past vibration-feature acquisitions add useful temporal context while
@@ -213,6 +227,11 @@ are dropped. Selection and early stopping use validation bearings; test bearings
 only after freezing. Phase 4 baselines are recomputed on exactly the eligible LSTM acquisition
 IDs. Details are in [docs/phase5_methodology.md](docs/phase5_methodology.md).
 
+The validated Phase 5 run evaluated 65 candidates and generated 27,213 eligible test-prediction
+rows. Macro MAE was 280.03 minutes for the single-acquisition LSTM ablation, 285.06 minutes for
+the vibration-plus-time LSTM, and 346.74 minutes for the temporal vibration-only LSTM. Temporal
+context therefore did not improve over the `k=1` ablation in the evaluated configuration family.
+
 ## Run Phase 6 statistical consolidation
 
 Phase 6 performs no training. It harmonizes the immutable Phase 4 and Phase 5 predictions,
@@ -228,6 +247,13 @@ comparisons, ranking uncertainty, feature and cost consolidation, final tables/f
 traceable Portuguese thesis drafts. Non-significance is not interpreted as equivalence. See
 [docs/phase6_methodology.md](docs/phase6_methodology.md).
 
+The validated consolidation harmonized 110,157 prediction rows and retained 8,961 acquisitions
+per primary model on strict common support. No candidate comparison against the dummy was
+significant after Holm correction. The vibration-plus-time LSTM did outperform the vibration-only
+LSTM in an exploratory paired contrast, but it still did not outperform the dummy. Phase 6 writes
+machine-readable results, tables in four formats, figures, Portuguese manuscript drafts, and a
+claims manifest beneath `outputs/consolidation/` without editing the monograph itself.
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition
@@ -240,7 +266,8 @@ RUL_b,t = (N_b - 1 - t) * delta_t
 `t` is zero-based after validated numeric ordering. Therefore, the final acquisition has RUL zero.
 A normalized life fraction may be used only for visualization and exploratory analysis.
 
-The following leakage controls apply to all future modeling phases:
+The following leakage controls apply throughout the implemented modeling phases and to any future
+extension:
 
 - Never use the final lifetime or total acquisition count of a held-out bearing as an input
   feature.
@@ -266,7 +293,14 @@ Other current limitations include:
 - No official label identifies the exact onset of degradation.
 - Nominal operating conditions come from dataset documentation and directory labels rather than
   per-acquisition measurements.
-- Phase 4 evaluates only classical regressors; it does not establish generalization beyond these
-  bearings or support causal claims about operating-condition differences.
+- Phase 4 evaluates a deliberately bounded set of classical regressors, and Phase 5 evaluates one
+  compact unidirectional LSTM family rather than an unrestricted architecture search.
+- Phase 5 temporal models drop incomplete sequence prefixes, requiring support-matched comparison.
+- Phase 6 inference uses 15 bearings as independent experimental units; non-significant results do
+  not demonstrate equivalence.
+- Life-stage and estimated-onset analyses are retrospective, and there is no external-dataset or
+  industrial deployment validation.
+- Dataset-specific condition differences do not support causal claims about rotation speed or
+  radial load.
 - Conclusions must remain limited to the 15 XJTU-SY run-to-failure bearings and their three
   operating conditions.
