@@ -213,6 +213,21 @@ are dropped. Selection and early stopping use validation bearings; test bearings
 only after freezing. Phase 4 baselines are recomputed on exactly the eligible LSTM acquisition
 IDs. Details are in [docs/phase5_methodology.md](docs/phase5_methodology.md).
 
+## Run Phase 6 statistical consolidation
+
+Phase 6 performs no training. It harmonizes the immutable Phase 4 and Phase 5 predictions,
+constructs native, pairwise-matched, and strict-common supports, and treats the bearing as the
+independent unit for uncertainty and paired inference:
+
+```bash
+uv run xjtu-sy-run-phase6 --config configs/phase6.yaml
+```
+
+The command generates bearing bootstraps, paired tests and effects, Holm-adjusted primary
+comparisons, ranking uncertainty, feature and cost consolidation, final tables/figures, and
+traceable Portuguese thesis drafts. Non-significance is not interpreted as equivalence. See
+[docs/phase6_methodology.md](docs/phase6_methodology.md).
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition

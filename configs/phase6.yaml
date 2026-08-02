@@ -1,0 +1,37 @@
+project_root: ..
+split_manifest: outputs/splits/folds.json
+phase4_predictions: outputs/rul/predictions/test_predictions.parquet
+phase5_predictions: outputs/rul_temporal/predictions/test_predictions.parquet
+phase3_rankings: outputs/prognostics/fold_feature_rankings.parquet
+phase4_importance: outputs/rul/interpretability/feature_importance_summary.csv
+phase5_importance: outputs/rul_temporal/interpretability/feature_occlusion_summary.csv
+phase4_costs: outputs/rul/metrics/computational_costs.parquet
+phase5_costs: outputs/rul_temporal/metrics/computational_costs.parquet
+test_onsets: outputs/degradation/estimated_onsets.parquet
+output_directory: outputs/consolidation
+expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
+primary_models: [dummy_median, time_only_ridge, selected_features_plus_time_ridge, selected_features_ridge, selected_features_lstm_k1_ablation, selected_features_plus_time_lstm, selected_features_lstm]
+secondary_models: [selected_features_hist_gradient_boosting, selected_features_random_forest, all_features_ridge, all_features_random_forest, all_features_hist_gradient_boosting]
+primary_contrasts:
+  - [time_only_ridge, dummy_median]
+  - [selected_features_plus_time_ridge, dummy_median]
+  - [selected_features_ridge, dummy_median]
+  - [selected_features_lstm_k1_ablation, dummy_median]
+  - [selected_features_plus_time_lstm, dummy_median]
+  - [selected_features_lstm, dummy_median]
+  - [selected_features_lstm, selected_features_lstm_k1_ablation]
+  - [selected_features_plus_time_lstm, selected_features_lstm]
+  - [selected_features_plus_time_lstm, time_only_ridge]
+tie_tolerance_minutes: 1.0e-9
+practical_tolerance_minutes: 5.0
+bootstrap_seed: 20260802
+bootstrap_replicates: 10000
+confidence_level: 0.95
+alpha: 0.05
+multiple_comparison_method: holm
+resampling_unit: bearing
+stratified_bootstrap: true
+decimal_precision: 2
+plot_dpi: 200
+generate_pdf: true
