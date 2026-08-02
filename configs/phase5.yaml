@@ -1,0 +1,32 @@
+project_root: ..
+feature_table: outputs/features/features.parquet
+split_manifest: outputs/splits/folds.json
+selected_feature_manifest: outputs/prognostics/selected_features_by_fold.json
+phase4_predictions: outputs/rul/predictions/test_predictions.parquet
+phase4_comparison: outputs/rul/metrics/model_comparison.csv
+test_onset_table: outputs/degradation/estimated_onsets.parquet
+output_directory: outputs/rul_temporal
+expected_feature_rows: 9216
+expected_feature_count: 52
+expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
+device: cpu
+random_seed: 42
+heavy_tail_feature_tokens: [variance, rms, max_abs, peak_to_peak, kurtosis, energy, crest_factor, impulse_factor, clearance_factor, spectral_power, band_power]
+candidates:
+  - {sequence_length: 5, hidden_size: 32, num_layers: 1, dropout: 0.0, learning_rate: 0.001}
+  - {sequence_length: 10, hidden_size: 32, num_layers: 1, dropout: 0.0, learning_rate: 0.001}
+  - {sequence_length: 20, hidden_size: 32, num_layers: 1, dropout: 0.0, learning_rate: 0.001}
+  - {sequence_length: 10, hidden_size: 64, num_layers: 1, dropout: 0.0, learning_rate: 0.0003}
+  - {sequence_length: 20, hidden_size: 64, num_layers: 1, dropout: 0.0, learning_rate: 0.0003}
+  - {sequence_length: 10, hidden_size: 64, num_layers: 2, dropout: 0.2, learning_rate: 0.0003}
+max_epochs: 50
+patience: 7
+minimum_delta: 0.01
+batch_size: 128
+weight_decay: 0.0001
+huber_beta: 1.0
+gradient_clip_norm: 1.0
+life_stage_thresholds: [0.33, 0.66]
+plot_dpi: 200
+generate_pdf: true

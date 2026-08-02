@@ -17,6 +17,7 @@ dependencies = [
     "psutil>=6.0",
     "scikit-learn>=1.5",
     "ruptures>=1.1.9",
+    "torch>=2.7",
 ]
 
 [project.scripts]
@@ -24,6 +25,7 @@ xjtu-sy-audit = "xjtu_sy_tcc.cli.audit:main"
 xjtu-sy-build-features = "xjtu_sy_tcc.cli.features:main"
 xjtu-sy-run-phase3 = "xjtu_sy_tcc.cli.phase3:main"
 xjtu-sy-run-phase4 = "xjtu_sy_tcc.cli.phase4:main"
+xjtu-sy-run-phase5 = "xjtu_sy_tcc.cli.phase5:main"
 
 [dependency-groups]
 dev = [

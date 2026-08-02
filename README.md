@@ -197,6 +197,22 @@ training or selection. Outputs are written beneath `outputs/rul/`. Full definiti
 experiment matrix, leakage controls, metrics, and limitations are documented in
 [docs/phase4_methodology.md](docs/phase4_methodology.md).
 
+## Run Phase 5 causal LSTM regression
+
+Phase 5 evaluates whether past vibration-feature acquisitions add useful temporal context while
+preserving the frozen complete-bearing protocol:
+
+```bash
+uv run xjtu-sy-run-phase5 --config configs/phase5.yaml
+```
+
+The three experiments are a selected-feature causal LSTM, the same LSTM with current elapsed time
+and known operating condition, and a sequence-length-one diagnostic ablation. Windows never cross
+bearing boundaries and contain only the current and previous acquisitions. Incomplete prefixes
+are dropped. Selection and early stopping use validation bearings; test bearings are evaluated
+only after freezing. Phase 4 baselines are recomputed on exactly the eligible LSTM acquisition
+IDs. Details are in [docs/phase5_methodology.md](docs/phase5_methodology.md).
+
 ## RUL definition and leakage controls
 
 For bearing `b`, acquisition index `t`, total acquisition count `N_b`, and nominal acquisition
