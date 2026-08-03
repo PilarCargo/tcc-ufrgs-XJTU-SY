@@ -1,0 +1,34 @@
+project_root: ..
+metadata_path: outputs/audits/metadata.parquet
+feature_table: outputs/features/features.parquet
+split_manifest: outputs/splits/folds.json
+selected_features: outputs/prognostics/selected_features_by_fold.json
+retrospective_onsets: outputs/degradation/estimated_onsets.parquet
+detector_output: outputs/causal_degradation
+survival_output: outputs/survival
+expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
+welch_nperseg: 2048
+welch_overlap: 1024
+frequency_min_hz: 0.0
+frequency_max_hz: 12800.0
+spectral_bins: 32
+epsilon: 1.0e-12
+workers: 4
+baseline_candidates: [5, 10, 15]
+divergence_candidates: [symmetric_kl, kl]
+channel_aggregations: [mean, maximum]
+causal_windows: [1, 3, 5]
+threshold_candidates: [4.0, 6.0, 8.0]
+persistence_candidates: [3, 5]
+minimum_post_alarm: 10
+minimum_effect: 4.0
+maximum_gap: 1
+trend_windows: [5, 10, 20]
+landmark_stride: 5
+minimum_followup: 5
+fixed_horizons: [30.0, 60.0, 120.0, 240.0]
+target_censoring_rates: [0.25, 0.5, 0.75]
+random_seed: 42
+plot_dpi: 200
+generate_pdf: true

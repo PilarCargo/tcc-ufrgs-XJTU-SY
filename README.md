@@ -11,10 +11,11 @@ scope, or claim generalization to industrial environments outside XJTU-SY.
 
 ## Current status
 
-Phases 1 through 6 are implemented, validated, and executed on the real dataset. The repository
+Phases 1 through 7 are implemented, validated, and executed on the real dataset. The repository
 contains the complete integrity audit, 52 vibration features, leakage-free degradation analysis,
 classical RUL regression, causal unidirectional LSTM experiments, and final bearing-level
-statistical consolidation. The current automated suite contains 180 passing tests.
+statistical consolidation, causal spectral degradation detection, and survival-ready cohort
+construction. The current automated suite contains 187 passing tests.
 
 The exhaustive audit validated three operating conditions, 15 bearing directories, 9,216
 acquisitions, and 301,989,888 signal rows with no critical dataset errors. The per-bearing counts
@@ -246,6 +247,21 @@ The command generates bearing bootstraps, paired tests and effects, Holm-adjuste
 comparisons, ranking uncertainty, feature and cost consolidation, final tables/figures, and
 traceable Portuguese thesis drafts. Non-significance is not interpreted as equivalence. See
 [docs/phase6_methodology.md](docs/phase6_methodology.md).
+
+## Run Phase 7 causal degradation and survival datasets
+
+Phase 7 replaces retrospective full-trajectory prediction with an operationally causal gate:
+
+```bash
+uv run xjtu-sy-run-phase7 --config configs/phase7.yaml
+```
+
+The pipeline creates binned Welch spectral distributions, fixed-prefix bearing references,
+KL/SKL divergence trajectories, persistent causal alarms, an RMS threshold baseline, causal
+feature trends, and full-event or administratively censored survival cohorts. Detector selection
+uses training and validation bearings; the frozen spectral detector is applied once to each test
+bearing. PELT remains a retrospective descriptive reference and no survival model is trained.
+Details are in [docs/phase7_methodology.md](docs/phase7_methodology.md).
 
 The validated consolidation harmonized 110,157 prediction rows and retained 8,961 acquisitions
 per primary model on strict common support. No candidate comparison against the dummy was
