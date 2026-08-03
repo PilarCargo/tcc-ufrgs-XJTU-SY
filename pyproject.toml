@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.9",
     "psutil>=6.0",
     "scikit-learn>=1.5",
+    "scikit-survival>=0.25",
     "ruptures>=1.1.9",
     "torch>=2.7",
 ]
@@ -28,6 +29,7 @@ xjtu-sy-run-phase4 = "xjtu_sy_tcc.cli.phase4:main"
 xjtu-sy-run-phase5 = "xjtu_sy_tcc.cli.phase5:main"
 xjtu-sy-run-phase6 = "xjtu_sy_tcc.cli.phase6:main"
 xjtu-sy-run-phase7 = "xjtu_sy_tcc.cli.phase7:main"
+xjtu-sy-run-phase8 = "xjtu_sy_tcc.cli.phase8:main"
 
 [dependency-groups]
 dev = [

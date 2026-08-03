@@ -1,0 +1,44 @@
+project_root: ..
+split_manifest: outputs/splits/folds.json
+onset_cohort: outputs/survival/cohorts/onset_event_cohort.parquet
+full_event_cohort: outputs/survival/cohorts/full_event_landmarks.parquet
+fixed_horizon_cohort: outputs/survival/cohorts/fixed_horizon_censored_landmarks.parquet
+rate_censored_cohort: outputs/survival/cohorts/rate_censored_landmarks.parquet
+evaluation_truth: outputs/survival/evaluation/landmark_truth.parquet
+survival_schema: outputs/survival/schema/survival_schema.json
+forbidden_columns: outputs/survival/schema/forbidden_columns.json
+censoring_manifest: outputs/survival/censoring/censoring_manifest.json
+primary_onsets: outputs/causal_degradation/detector/test_causal_onsets.parquet
+detector_candidates: outputs/causal_degradation/detector/detector_candidates.parquet
+selected_detectors: outputs/causal_degradation/detector/selected_detectors.json
+phase3_rankings: outputs/prognostics/fold_feature_rankings.parquet
+phase4_predictions: outputs/rul/predictions/test_predictions.parquet
+phase5_predictions: outputs/rul_temporal/predictions/test_predictions.parquet
+phase6_consensus: outputs/consolidation/features/feature_evidence_consensus.csv
+output_directory: outputs/survival_models
+expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
+primary_scenarios: [full_event, fixed_horizon_60, fixed_horizon_120, fixed_horizon_240]
+secondary_scenarios: [fixed_horizon_30, target_censoring_25, target_censoring_50, target_censoring_75]
+context_features: [time_since_causal_onset, elapsed_minutes, rotation_rpm, radial_load_kn]
+correlation_threshold: 0.95
+near_constant_threshold: 0.999
+feature_counts: [5, 10, 15]
+cox_alphas: [0.1, 1.0, 10.0]
+rsf_candidates:
+  - {n_estimators: 100, max_depth: 5, min_samples_leaf: 10, max_features: sqrt}
+  - {n_estimators: 200, max_depth: 5, min_samples_leaf: 10, max_features: 0.5}
+  - {n_estimators: 200, max_depth: null, min_samples_leaf: 20, max_features: sqrt}
+evaluation_quantiles: [0.10, 0.90]
+evaluation_points: 25
+prediction_horizons: [30.0, 60.0, 120.0, 240.0]
+calibration_bins: 3
+bootstrap_replicates: 10000
+bootstrap_seed: 42
+confidence_level: 0.95
+random_seed: 42
+generate_pdf: true
+plot_dpi: 200
+conservative_detector_enabled: true
+conservative_min_threshold_delta: 0.0
+conservative_min_persistence_delta: 2
