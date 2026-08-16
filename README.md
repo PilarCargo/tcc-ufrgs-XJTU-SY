@@ -102,6 +102,12 @@ Critical validation errors gate downstream work. Do not extract features or trai
 audit reports a critical error. Warnings and any explainable numbering irregularities must be
 retained in the generated report rather than silently ignored.
 
+The complete Phase 1 procedure, equations, duplicate-content policy, validated results, and
+limitations are documented in
+[docs/phase1_methodology.md](docs/phase1_methodology.md). The observed directory structure and
+per-bearing acquisition counts remain documented in
+[docs/dataset_structure.md](docs/dataset_structure.md).
+
 ## Build Phase-2 vibration features
 
 Phase 2 consumes the validated `outputs/audits/metadata.parquet` manifest and reads one raw
@@ -154,6 +160,10 @@ affect runtime.
 Each bearing receives unsmoothed RMS, kurtosis, crest-factor, energy, and RUL trajectories, plus
 combined time-series/PSD figures for its first, middle, and final acquisitions. PNG files use the
 configured DPI and PDF counterparts preserve vector content.
+
+Exact time-domain and spectral formulas, Welch settings, band definitions, checkpoint behavior,
+validation rules, results, and limitations are documented in
+[docs/phase2_methodology.md](docs/phase2_methodology.md).
 
 ## Run Phase 3 degradation analysis
 

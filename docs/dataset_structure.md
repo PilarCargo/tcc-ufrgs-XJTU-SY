@@ -5,11 +5,11 @@
 The project uses the local XJTU-SY Bearing Dataset exclusively. No other dataset and no simulated
 replacement data are permitted.
 
-The counts below were obtained from a preliminary read-only directory inspection. That inspection
-checked all 9,216 CSV filenames and their shared header, and it spot-checked representative files
-from all three conditions for the expected row shape. It did **not** exhaustively parse every
-numeric value or count every row in every CSV. Therefore, this document does not claim that the
-full dataset audit has passed. The Phase-1 audit command performs the exhaustive validation.
+The counts below were initially established by read-only inspection and were subsequently
+confirmed by the exhaustive Phase 1 audit of every acquisition. The validated audit parsed all
+9,216 CSVs, checked 301,989,888 physical signal rows, and finished with status `PASSED`, zero
+critical errors, and no duplicate-content groups. The complete procedure and final evidence are
+documented in [phase1_methodology.md](phase1_methodology.md).
 
 ## Observed local layout
 
@@ -156,6 +156,11 @@ report:
 
 Critical errors block all downstream feature extraction and modeling. An invalid raw file must
 never be silently skipped, repaired in place, or replaced with simulated data.
+
+The validated real-data audit completed with status `PASSED`. Its canonical machine-readable
+evidence is `outputs/audits/dataset_audit.json`; the corresponding readable report is
+`outputs/audits/dataset_audit.md`. See [phase1_methodology.md](phase1_methodology.md) for the
+discovery, duplicate-detection, metadata, atomic-output, and validation methodology.
 
 ## Current methodological limitations
 
