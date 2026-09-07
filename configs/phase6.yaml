@@ -11,7 +11,7 @@ test_onsets: outputs/degradation/estimated_onsets.parquet
 output_directory: outputs/consolidation
 expected_split_sha256: e896fe25f39f263d8c85e26df0354a1b682b56ad2e4c50a3fffcdecf9f884fbd
 expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
-primary_models: [dummy_median, time_only_ridge, selected_features_plus_time_ridge, selected_features_ridge, selected_features_lstm_k1_ablation, selected_features_plus_time_lstm, selected_features_lstm]
+primary_models: [dummy_median, condition_lifetime_countdown, time_only_ridge, selected_features_plus_time_ridge, selected_features_ridge, selected_features_lstm_k1_ablation, selected_features_plus_time_lstm, selected_features_lstm]
 secondary_models: [selected_features_hist_gradient_boosting, selected_features_random_forest, all_features_ridge, all_features_random_forest, all_features_hist_gradient_boosting]
 primary_contrasts:
   - [time_only_ridge, dummy_median]
@@ -23,6 +23,10 @@ primary_contrasts:
   - [selected_features_lstm, selected_features_lstm_k1_ablation]
   - [selected_features_plus_time_lstm, selected_features_lstm]
   - [selected_features_plus_time_lstm, time_only_ridge]
+countdown_contrasts:
+  - [condition_lifetime_countdown, dummy_median]
+  - [condition_lifetime_countdown, selected_features_plus_time_ridge]
+  - [condition_lifetime_countdown, selected_features_lstm_k1_ablation]
 tie_tolerance_minutes: 1.0e-9
 practical_tolerance_minutes: 5.0
 bootstrap_seed: 20260802

@@ -54,6 +54,9 @@ class ModelBundle:
     training_seconds: float
 
     def predict(self, frame: pd.DataFrame) -> np.ndarray:
+        if self.spec.model_family == "condition_countdown":
+            values = self.estimator.predict(frame)  # type: ignore[union-attr]
+            return np.asarray(values, dtype=float)
         if self.spec.model_family == "dummy":
             matrix = np.zeros((len(frame), 1), dtype=float)
         elif self.transformer is not None:
@@ -66,12 +69,60 @@ class ModelBundle:
         return values
 
 
+@dataclass(slots=True)
+class ConditionLifetimeCountdown:
+    """Training-bearing median experimental lifetime minus current elapsed time."""
+
+    median_lifetime_by_condition: dict[int, float]
+    training_bearings_by_condition: dict[int, tuple[str, ...]]
+
+    @classmethod
+    def fit(cls, training: pd.DataFrame) -> ConditionLifetimeCountdown:
+        required = {"condition_id", "bearing_id", "elapsed_minutes", "rul_minutes"}
+        if required - set(training):
+            raise ValueError("Countdown training data are missing required columns")
+        bearing = (
+            training.groupby(["condition_id", "bearing_id"], as_index=False)
+            .agg(
+                lifetime_minutes=("elapsed_minutes", "max"),
+                initial_rul_minutes=("rul_minutes", "max"),
+            )
+            .sort_values(["condition_id", "bearing_id"])
+        )
+        if not np.allclose(bearing.lifetime_minutes, bearing.initial_rul_minutes):
+            raise ValueError("Training lifetime is inconsistent with the RUL endpoint convention")
+        conditions = sorted(training.condition_id.unique())
+        medians = bearing.groupby("condition_id").lifetime_minutes.median().to_dict()
+        if set(medians) != set(conditions):
+            raise ValueError("A training operating condition has no lifetime estimate")
+        training_bearings = {
+            int(condition): tuple(group.bearing_id)
+            for condition, group in bearing.groupby("condition_id", sort=True)
+        }
+        return cls({int(key): float(value) for key, value in medians.items()}, training_bearings)
+
+    def predict(self, frame: pd.DataFrame) -> np.ndarray:
+        if {"condition_id", "elapsed_minutes"} - set(frame):
+            raise ValueError("Countdown prediction requires condition and elapsed time")
+        missing = set(frame.condition_id.unique()) - set(self.median_lifetime_by_condition)
+        if missing:
+            raise ValueError(f"No training lifetime for operating conditions: {sorted(missing)}")
+        lifetimes = frame.condition_id.map(self.median_lifetime_by_condition).to_numpy(float)
+        return np.maximum(0.0, lifetimes - frame.elapsed_minutes.to_numpy(float))
+
+
 def experiment_specs(
     selected: tuple[str, ...], all_features: tuple[str, ...]
 ) -> tuple[ExperimentSpec, ...]:
     time_columns = ("elapsed_minutes", "rotation_rpm", "radial_load_kn")
     return (
         ExperimentSpec("dummy_median", "dummy", (), 0),
+        ExperimentSpec(
+            "condition_lifetime_countdown",
+            "condition_countdown",
+            ("condition_id", "elapsed_minutes"),
+            0,
+        ),
         ExperimentSpec("time_only_ridge", "ridge", time_columns, 1),
         ExperimentSpec("selected_features_ridge", "ridge", selected, 1),
         ExperimentSpec("selected_features_random_forest", "random_forest", selected, 3),
@@ -90,6 +141,8 @@ def experiment_specs(
 def candidates(spec: ExperimentSpec, config: Phase4Config) -> tuple[dict[str, object], ...]:
     if spec.model_family == "dummy":
         return ({"strategy": "median"},)
+    if spec.model_family == "condition_countdown":
+        return ({"statistic": "training_bearing_condition_median_lifetime"},)
     if spec.model_family == "ridge":
         return tuple({"alpha": alpha} for alpha in config.ridge_alphas)
     if spec.model_family == "random_forest":
@@ -108,6 +161,18 @@ def fit_model(
 ) -> ModelBundle:
     """Fit preprocessing and estimator using training rows and weights only."""
     preprocessing_started = time.perf_counter()
+    if spec.model_family == "condition_countdown":
+        training_started = time.perf_counter()
+        estimator = ConditionLifetimeCountdown.fit(training)
+        training_seconds = time.perf_counter() - training_started
+        return ModelBundle(
+            spec,
+            dict(parameters),
+            None,
+            estimator,
+            time.perf_counter() - preprocessing_started - training_seconds,
+            training_seconds,
+        )
     transformer = None
     if spec.model_family != "dummy":
         transformer = fit_transformer(

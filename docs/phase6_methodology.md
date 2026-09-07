@@ -24,6 +24,11 @@ sign tests use wins and losses only. Negative rank-biserial effects favor the ca
 correction applies to the pre-specified dummy-comparison family. Effect sizes, differences, and
 confidence intervals receive precedence over p-values. Non-significance is not equivalence.
 
+The condition-specific countdown has a separate predeclared three-hypothesis family: countdown
+versus the constant median, selected-features-plus-time Ridge, and the single-acquisition LSTM.
+Holm adjustment is performed within this new family. The earlier dummy-comparison family remains
+unchanged, so its previously reported adjusted values retain their original multiplicity scope.
+
 Condition results are dataset-specific because each condition contains only five bearings and
 speed/load are combined. Life stage and estimated degradation onset are retrospective; onset is
 not ground truth or an input. Feature triangulation preserves channel identity and reports rank

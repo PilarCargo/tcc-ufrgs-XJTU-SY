@@ -68,7 +68,8 @@ def run_phase6(config: Phase6Config, *, generate_plots=True, generate_manuscript
     summaries = []
     bootstraps = []
     tests = []
-    for index, (candidate, reference) in enumerate(config.primary_contrasts):
+    all_contrasts = config.primary_contrasts + config.countdown_contrasts
+    for index, (candidate, reference) in enumerate(all_contrasts):
         c, r = pairwise_support(canonical, candidate, reference)
         support.append(support_manifest(canonical, candidate, reference))
         diff = paired_differences(
@@ -98,20 +99,25 @@ def run_phase6(config: Phase6Config, *, generate_plots=True, generate_manuscript
             {
                 **summary,
                 **paired_tests(diff, config.tie_tolerance_minutes),
-                "family": "dummy_comparisons"
-                if reference == "dummy_median"
-                else "temporal_context",
+                "family": (
+                    "condition_countdown_predeclared"
+                    if (candidate, reference) in config.countdown_contrasts
+                    else "dummy_comparisons"
+                    if reference == "dummy_median"
+                    else "temporal_context"
+                ),
             }
         )
     support_table = pd.concat(support, ignore_index=True)
     difference_table = pd.concat(differences, ignore_index=True)
     tests_table = pd.DataFrame(tests)
-    dummy_mask = tests_table.family.eq("dummy_comparisons")
-    corrected = holm_adjust(tests_table[dummy_mask].reset_index(drop=True), alpha=config.alpha)
     tests_table["holm_p_adjusted"] = np.nan
     tests_table["holm_reject"] = False
-    tests_table.loc[dummy_mask, "holm_p_adjusted"] = corrected.holm_p_adjusted.to_numpy()
-    tests_table.loc[dummy_mask, "holm_reject"] = corrected.holm_reject.to_numpy()
+    for family in ("dummy_comparisons", "condition_countdown_predeclared"):
+        mask = tests_table.family.eq(family)
+        corrected = holm_adjust(tests_table[mask].reset_index(drop=True), alpha=config.alpha)
+        tests_table.loc[mask, "holm_p_adjusted"] = corrected.holm_p_adjusted.to_numpy()
+        tests_table.loc[mask, "holm_reject"] = corrected.holm_reject.to_numpy()
     tests_table["family_hypothesis_count"] = tests_table.family.map(
         tests_table.groupby("family").size()
     )
@@ -284,6 +290,7 @@ def run_phase6(config: Phase6Config, *, generate_plots=True, generate_manuscript
         support_table,
         claim_count,
         folds,
+        require_claims=generate_manuscript,
     )
     atomic_json(root / "inputs/integrity_report.json", validation)
     report = {
@@ -329,7 +336,9 @@ def _model_metrics(data, bearing):
     return global_.merge(macro).sort_values("macro_mae")
 
 
-def _validate(config, canonical, strict, differences, tests, support, claims, folds):
+def _validate(
+    config, canonical, strict, differences, tests, support, claims, folds, *, require_claims=True
+):
     issues = []
     if canonical.bearing_id.nunique() != 15:
         issues.append("not exactly 15 bearings")
@@ -345,7 +354,7 @@ def _validate(config, canonical, strict, differences, tests, support, claims, fo
         issues.append("invalid p-values")
     if not np.allclose(support.matched_count > 0, True):
         issues.append("empty bearing support")
-    if claims < 1:
+    if require_claims and claims < 1:
         issues.append("no traceable quantitative claims")
     return {
         "status": "passed" if not issues else "failed",

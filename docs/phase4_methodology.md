@@ -16,12 +16,19 @@ not change any experiment choice.
 
 ## Inputs and experiments
 
-The experiment matrix contains `dummy_median`, `time_only_ridge`, selected-feature Ridge, Random
-Forest, and HistGradientBoosting, their all-52-feature ablations, and a secondary
+The experiment matrix contains `dummy_median`, `condition_lifetime_countdown`, `time_only_ridge`,
+selected-feature Ridge, Random Forest, and HistGradientBoosting, their all-52-feature ablations, and a secondary
 selected-features-plus-time Ridge ablation. Time-only inputs are elapsed minutes, rotation speed,
 and radial load. Vibration-only experiments contain no elapsed-time field. Known operating
 conditions are permitted, but bearing identity, paths, RUL, lifetime, normalized life, fold,
 subset, PELT output, and every future-derived field are rejected.
+
+For each fold and condition, `condition_lifetime_countdown` takes the median experimental lifetime
+across complete training bearings in that condition and predicts
+`max(0, median_training_lifetime - elapsed_minutes)`. Validation/test bearing lengths, targets,
+total acquisition counts, normalized life, and future acquisitions are never inputs. With the
+zero-based convention `RUL(t)=N-1-t`, experimental lifetime is `N-1` minutes; fitting checks this
+identity on every training bearing.
 
 The Phase 3 health indicator is retrospective: its initial center uses the complete first 10% of
 each trajectory. It is therefore omitted from full-trajectory prediction rather than being

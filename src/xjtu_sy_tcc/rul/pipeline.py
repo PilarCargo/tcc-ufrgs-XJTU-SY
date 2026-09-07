@@ -94,6 +94,41 @@ def run_phase4(
     importance_frames = []
     cost_records = []
     artifact_records = []
+    countdown_lifetime_records = []
+    prior_predictions_path = config.output_directory / "predictions/test_predictions.parquet"
+    augment_only = False
+    if prior_predictions_path.exists():
+        prior_predictions = pd.read_parquet(prior_predictions_path)
+        augment_only = (
+            "condition_lifetime_countdown" not in set(prior_predictions.experiment)
+            and not force_train
+        )
+        if augment_only:
+            prediction_frames.append(prior_predictions)
+            all_candidate_records.append(
+                pd.read_parquet(
+                    config.output_directory / "model_selection/validation_candidates.parquet"
+                )
+            )
+            selected_payload = json.loads(
+                (config.output_directory / "model_selection/selected_models.json").read_text()
+            )
+            artifact_records.extend(selected_payload["models"])
+            coefficient_frames.append(
+                pd.read_parquet(
+                    config.output_directory / "interpretability/ridge_coefficients.parquet"
+                )
+            )
+            importance_frames.append(
+                pd.read_parquet(
+                    config.output_directory / "interpretability/permutation_importance.parquet"
+                )
+            )
+            cost_records.extend(
+                pd.read_parquet(
+                    config.output_directory / "metrics/computational_costs.parquet"
+                ).to_dict("records")
+            )
     experiment_names = None
     for fold in folds:
         train = features[features["bearing_id"].isin(fold.train_bearings)].copy()
@@ -103,6 +138,8 @@ def run_phase4(
         specs = experiment_specs(selected_by_fold[fold.fold_id], feature_columns)
         experiment_names = tuple(spec.experiment for spec in specs)
         for spec in specs:
+            if augment_only and spec.experiment != "condition_lifetime_countdown":
+                continue
             validate_input_columns(
                 spec.input_columns if spec.input_columns else ("condition_id",),
                 tuple(features.columns),
@@ -176,6 +213,25 @@ def run_phase4(
             artifact_records.append(artifact_record)
             atomic_json(artifact_path.with_name("metadata.json"), artifact_record)
             selected_payload["models"].append(artifact_record)
+            if spec.experiment == "condition_lifetime_countdown":
+                for condition, lifetime in frozen.estimator.median_lifetime_by_condition.items():
+                    countdown_lifetime_records.append(
+                        {
+                            "fold": fold.fold_id,
+                            "condition_id": condition,
+                            "training_bearings": json.dumps(
+                                frozen.estimator.training_bearings_by_condition[condition]
+                            ),
+                            "training_median_lifetime_minutes": lifetime,
+                            "prediction_rule": (
+                                "max(0, training_median_lifetime_minutes - elapsed_minutes)"
+                            ),
+                            "endpoint_definition": (
+                                "(total_acquisitions - 1 - sequence_index) * interval; "
+                                "lifetime=(total_acquisitions - 1) * interval"
+                            ),
+                        }
+                    )
             cost_records.append(
                 {
                     "fold": fold.fold_id,
@@ -207,6 +263,19 @@ def run_phase4(
         config.life_stage_thresholds,
     )
     bearing_table = bearing_metrics(predictions)
+    countdown_lifetimes = pd.DataFrame(countdown_lifetime_records)
+    countdown_bearing = bearing_table[
+        bearing_table.experiment.eq("condition_lifetime_countdown")
+    ].merge(countdown_lifetimes, on=["fold", "condition_id"], validate="many_to_one")
+    test_lifetimes = (
+        predictions[predictions.experiment.eq("condition_lifetime_countdown")]
+        .groupby(["fold", "condition_id", "bearing_id"], as_index=False)
+        .elapsed_minutes.max()
+        .rename(columns={"elapsed_minutes": "test_bearing_lifetime_minutes"})
+    )
+    countdown_bearing = countdown_bearing.merge(
+        test_lifetimes, on=["fold", "condition_id", "bearing_id"], validate="one_to_one"
+    )
     fold_table = fold_metrics(bearing_table)
     acquisition_table = grouped_metrics(predictions, ["experiment", "model", "fold"])
     condition_table = _condition_metrics(predictions, bearing_table)
@@ -249,6 +318,8 @@ def run_phase4(
         importance_table,
         importance_summary,
         costs,
+        countdown_lifetimes,
+        countdown_bearing,
     )
     figure_count = (
         generate_phase4_figures(
@@ -319,6 +390,7 @@ def _model_comparison(predictions, bearing, folds):
     macro = bearing.groupby(["experiment", "model"], as_index=False).agg(
         macro_mae=("mae", "mean"),
         macro_rmse=("rmse", "mean"),
+        macro_normalized_mae=("normalized_mae", "mean"),
         median_bearing_mae=("mae", "median"),
         bearing_mae_q1=("mae", lambda x: x.quantile(0.25)),
         bearing_mae_q3=("mae", lambda x: x.quantile(0.75)),
@@ -365,6 +437,8 @@ def _write_outputs(
     importance,
     importance_summary,
     costs,
+    countdown_lifetimes,
+    countdown_bearing,
 ):
     root = config.output_directory
     paths = {
@@ -383,6 +457,10 @@ def _write_outputs(
         "permutation_importance": root / "interpretability" / "permutation_importance.parquet",
         "importance_summary": root / "interpretability" / "feature_importance_summary.csv",
         "computational_costs": root / "metrics" / "computational_costs.parquet",
+        "countdown_lifetimes": root / "baselines" / "condition_lifetime_countdown.parquet",
+        "countdown_bearing_metrics": root
+        / "baselines"
+        / "condition_lifetime_countdown_bearing_metrics.parquet",
     }
     for key, table in (
         ("validation_candidates", candidates_table),
@@ -399,6 +477,8 @@ def _write_outputs(
         ("permutation_importance", importance),
         ("importance_summary", importance_summary),
         ("computational_costs", costs),
+        ("countdown_lifetimes", countdown_lifetimes),
+        ("countdown_bearing_metrics", countdown_bearing),
     ):
         atomic_table(paths[key], table)
     atomic_json(paths["selected_models"], selected_payload)
@@ -527,10 +607,12 @@ def _compatible_cache(config):
         "selected_feature_manifest": _sha256(config.selected_feature_manifest),
         "test_onset_table": _sha256(config.test_onset_table),
     }
+    experiments = set(pd.read_parquet(predictions, columns=["experiment"]).experiment)
     if (
         report.get("status") == "passed"
         and report.get("configuration_hash") == config.configuration_hash
         and report.get("input_hashes") == expected_inputs
+        and "condition_lifetime_countdown" in experiments
     ):
         return report
     return None
@@ -545,9 +627,7 @@ def _generate_cached_figures(config: Phase4Config, report: dict[str, object]):
         "condition": pd.read_parquet(root / "metrics" / "condition_metrics.parquet"),
         "life": pd.read_parquet(root / "metrics" / "life_stage_metrics.parquet"),
         "onset": pd.read_parquet(root / "metrics" / "onset_region_metrics.parquet"),
-        "importance": pd.read_csv(
-            root / "interpretability" / "feature_importance_summary.csv"
-        ),
+        "importance": pd.read_csv(root / "interpretability" / "feature_importance_summary.csv"),
         "costs": pd.read_parquet(root / "metrics" / "computational_costs.parquet"),
     }
     onsets = pd.read_parquet(config.test_onset_table)

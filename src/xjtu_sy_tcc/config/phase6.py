@@ -31,6 +31,7 @@ class Phase6Config:
     primary_models: tuple[str, ...]
     secondary_models: tuple[str, ...]
     primary_contrasts: tuple[tuple[str, str], ...]
+    countdown_contrasts: tuple[tuple[str, str], ...]
     tie_tolerance_minutes: float
     practical_tolerance_minutes: float
     bootstrap_seed: int
@@ -71,15 +72,18 @@ def load_phase6_config(path: Path) -> Phase6Config:
     models = tuple(raw.pop("primary_models"))
     secondary = tuple(raw.pop("secondary_models"))
     contrasts = tuple(tuple(x) for x in raw.pop("primary_contrasts"))
+    countdown_contrasts = tuple(tuple(x) for x in raw.pop("countdown_contrasts"))
     if (
         len(set(models)) != len(models)
         or not models
-        or any(len(x) != 2 for x in contrasts)
-        or len(set(contrasts)) != len(contrasts)
+        or any(len(x) != 2 for x in contrasts + countdown_contrasts)
+        or len(set(contrasts + countdown_contrasts)) != len(contrasts + countdown_contrasts)
     ):
         raise ConfigurationError("Invalid model or contrast declaration")
     if any(a not in models or b not in models for a, b in contrasts):
         raise ConfigurationError("Primary contrasts must use primary models")
+    if any(a not in models or b not in models for a, b in countdown_contrasts):
+        raise ConfigurationError("Countdown contrasts must use primary models")
     if (
         raw["bootstrap_replicates"] < 100
         or not 0 < raw["confidence_level"] < 1
@@ -96,6 +100,7 @@ def load_phase6_config(path: Path) -> Phase6Config:
         primary_models=models,
         secondary_models=secondary,
         primary_contrasts=contrasts,
+        countdown_contrasts=countdown_contrasts,
         **paths,
         **raw,
     )
