@@ -8,7 +8,7 @@ test_onset_table: outputs/degradation/estimated_onsets.parquet
 output_directory: outputs/rul_temporal
 expected_feature_rows: 9216
 expected_feature_count: 52
-expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_sha256: e896fe25f39f263d8c85e26df0354a1b682b56ad2e4c50a3fffcdecf9f884fbd
 expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
 device: cpu
 random_seed: 42

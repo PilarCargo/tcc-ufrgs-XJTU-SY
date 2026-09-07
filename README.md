@@ -17,7 +17,7 @@ contains the complete integrity audit, 52 vibration features, leakage-free degra
 classical RUL regression, causal unidirectional LSTM experiments, and final bearing-level
 statistical consolidation, causal spectral degradation detection, survival-ready cohort
 construction, and classical probabilistic survival models. The current automated suite contains
-201 passing tests.
+202 passing tests.
 
 The exhaustive audit validated three operating conditions, 15 bearing directories, 9,216
 acquisitions, and 301,989,888 signal rows with no critical dataset errors. The per-bearing counts
@@ -269,10 +269,11 @@ Phase 7 replaces retrospective full-trajectory prediction with an operationally 
 uv run xjtu-sy-run-phase7 --config configs/phase7.yaml
 ```
 
-The pipeline creates binned Welch spectral distributions, fixed-prefix bearing references,
-KL/SKL divergence trajectories, persistent causal alarms, an RMS threshold baseline, causal
+The pipeline compares predeclared RMS, uniform-frequency spectral SKL, and mechanically informed
+shaft-order spectral SKL detectors using validation bearings only, freezes one detector per fold,
+then applies it to test bearings. It also creates persistent causal alarms and causal
 feature trends, and full-event or administratively censored survival cohorts. Detector selection
-uses training and validation bearings; the frozen spectral detector is applied once to each test
+uses training and validation bearings; the frozen detector is applied once to each test
 bearing. PELT remains a retrospective descriptive reference and no survival model is trained.
 Details are in [docs/phase7_methodology.md](docs/phase7_methodology.md).
 
@@ -302,7 +303,8 @@ Secondary analyses cover 30 minutes and the Phase 7 training-only target-censori
 Reports distinguish detector coverage from conditional prognostic performance and aggregate
 uncertainty by complete bearing rather than treating repeated landmarks as independent. Full
 curves, horizon probabilities, median-survival coverage, IBS, Brier, IPCW concordance,
-calibration, computational measurements, tables, figures, and formal Portuguese drafts are
+calibration, bearing-clustered Cox PH diagnostics, computational measurements, tables, figures,
+and formal Portuguese drafts are
 written under `outputs/survival_models/`. See
 [docs/phase8_methodology.md](docs/phase8_methodology.md) for formulas, leakage controls, and
 limitations. No neural survival model is trained and no monograph or LaTeX source is edited.

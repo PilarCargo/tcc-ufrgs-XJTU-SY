@@ -6,13 +6,15 @@ selected_features: outputs/prognostics/selected_features_by_fold.json
 retrospective_onsets: outputs/degradation/estimated_onsets.parquet
 detector_output: outputs/causal_degradation
 survival_output: outputs/survival
-expected_split_sha256: e12453322abb8e48865a425116e1cc42b1269bc874fe01e72536376b3af88da4
+expected_split_sha256: e896fe25f39f263d8c85e26df0354a1b682b56ad2e4c50a3fffcdecf9f884fbd
 expected_split_configuration_hash: f2ab1ef48f548db73a142b313c4db3298dc8fe19a6426cc02844fad7d2500adb
 welch_nperseg: 2048
 welch_overlap: 1024
 frequency_min_hz: 0.0
 frequency_max_hz: 12800.0
 spectral_bins: 32
+mechanical_max_order: 32.0
+detector_families: [rms, uniform_spectral_skl, mechanically_informed_spectral_skl]
 epsilon: 1.0e-12
 workers: 4
 baseline_candidates: [5, 10, 15]

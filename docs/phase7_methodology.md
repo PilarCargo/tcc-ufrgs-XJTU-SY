@@ -5,12 +5,14 @@ post-alarm prognosis. It trains no survival model. The complete-bearing folds an
 frozen, and all test parameters are selected with training and validation bearings only.
 
 Each raw acquisition is transformed into separate horizontal and vertical Welch PSDs using the
-validated Phase 2 settings. Power from 0–12.8 kHz is integrated into 32 deterministic bins,
-regularized by a positive epsilon, and normalized to a probability distribution. This cache is
-separate from the unchanged 52-feature table.
+validated Phase 2 settings. The predeclared comparison includes RMS; uniform-frequency spectral
+SKL over 0–12.8 kHz; and mechanically informed spectral SKL over 0–32 shaft-order bins. The order
+representation uses measured shaft speed as mechanical context but makes no bearing fault-frequency
+claim. Power is regularized by a positive epsilon and normalized to a probability distribution.
+The cache is separate from the unchanged 52-feature table.
 
 Each bearing calibrates from a fixed initial count, never a percentage of final life. Channel
-references are calibration medians. Both `KL(P||Q)` and symmetric KL are available. Divergence is
+references are calibration medians. Both spectral families use symmetric KL. Divergence is
 combined across channels, aggregated with a strictly trailing window, and robustly normalized by
 the calibration median and MAD. Zero MAD uses the configured epsilon.
 
@@ -20,14 +22,19 @@ isolated impulse, insufficient post-alarm follow-up, or insufficient effect retu
 `not_detected`; PELT is never a fallback. Parameter ranking rewards validation coverage while
 penalizing immediate post-calibration and final-only alarms. Retrospective PELT comparison is
 descriptive agreement, not onset accuracy, because no official onset ground truth exists.
+The primary family is selected from validation scores and frozen before test application. Test
+results for all three family-specific validation winners are a predeclared sensitivity analysis;
+test performance and Phase 8 IBS never select the detector.
 
 Fold-selected Phase 2 features generate only trailing descriptors: calibration differences and
 robust ratios, first differences, rolling mean/median/standard deviation, slopes, and EWMA.
 Landmarks begin at the confirmed causal alarm and stay within one bearing. Multiple landmarks
 from a bearing are correlated and must not be treated as independent subjects.
 
-The full-event cohort uses the observed run-to-failure endpoint. Fixed 30, 60, 120, and 240 minute
-horizons create administrative censoring. Target-rate horizons are quantiles of training landmark
+The full-event cohort uses the experimental end-of-life / run-to-failure endpoint of the XJTU-SY
+experiment; it does not assert physical destruction. Fixed 30, 60, 120, and 240 minute horizons
+are administrative censoring introduced for operational-horizon evaluation. XJTU-SY does not
+naturally supply censoring in this analysis. Target-rate horizons are quantiles of training landmark
 durations and are frozen for validation and test. Future truth is isolated under `evaluation/` and
 listed in the forbidden-column manifest. Bearing weights equalize total landmark contribution.
 

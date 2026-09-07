@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import resource
 import sys
@@ -57,8 +58,13 @@ def run_phase3(
     )
 
     folds = build_folds(features)
-    manifest = fold_manifest(folds, features, config.configuration_hash, created_at)
     splits_directory = config.output_root / "splits"
+    existing_manifest_path = splits_directory / "folds.json"
+    if existing_manifest_path.exists():
+        existing_manifest = json.loads(existing_manifest_path.read_text())
+        if existing_manifest.get("configuration_hash") == config.configuration_hash:
+            created_at = existing_manifest["created_at_utc"]
+    manifest = fold_manifest(folds, features, config.configuration_hash, created_at)
     atomic_json(splits_directory / "folds.json", manifest)
     atomic_text(splits_directory / "folds.md", _fold_markdown(manifest))
     log_event(
@@ -173,8 +179,6 @@ def run_phase3(
     prior_report_path = degradation_directory / "onset_validation.json"
     sensitivity = None
     if reuse_sensitivity and sensitivity_path.is_file() and prior_report_path.is_file():
-        import json
-
         prior_report = json.loads(prior_report_path.read_text(encoding="utf-8"))
         if prior_report.get("configuration_hash") == config.configuration_hash:
             sensitivity = pd.read_parquet(sensitivity_path)

@@ -22,6 +22,7 @@ from xjtu_sy_tcc.consolidation.tables import write_table_set
 from xjtu_sy_tcc.logging_utils import log_event
 from xjtu_sy_tcc.rul.reporting import atomic_json, atomic_model, atomic_table, atomic_text
 from xjtu_sy_tcc.survival_models.analysis import (
+    cox_ph_diagnostics,
     feature_consensus,
     kaplan_meier_onset,
     matched_rul_comparison,
@@ -54,6 +55,41 @@ from xjtu_sy_tcc.survival_models.safety import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _frozen_detector_contract(config: Phase8Config) -> tuple[dict[int, str], dict]:
+    payload = json.loads(config.selected_detectors.read_text())
+    if payload.get("selection_data") != "validation_only":
+        raise ValueError("Phase 8 requires validation-only detector selection")
+    if payload.get("frozen_before_test_application") is not True:
+        raise ValueError("Detector was not recorded as frozen before test application")
+    if payload.get("test_metrics_used_for_selection") is not False:
+        raise ValueError("Detector selection may not use test metrics")
+    detectors = payload.get("detectors", [])
+    candidates = pd.read_parquet(config.detector_candidates)
+    forbidden_selection_columns = [
+        column for column in candidates if "test" in column.lower() or "ibs" in column.lower()
+    ]
+    if forbidden_selection_columns:
+        raise ValueError(
+            f"Detector candidate ranking contains prohibited test/IBS fields: {forbidden_selection_columns}"
+        )
+    candidate_keys = set(
+        candidates[["fold", "candidate_id", "detector_family"]].itertuples(index=False, name=None)
+    )
+    for row in detectors:
+        key = (int(row["fold"]), int(row["candidate_id"]), row["detector_family"])
+        if key not in candidate_keys or row.get("selection_data") != "validation_only":
+            raise ValueError("Frozen detector is not traceable to validation-only candidates")
+    families = {int(row["fold"]): row["detector_family"] for row in detectors}
+    allowed = {"rms", "uniform_spectral_skl", "mechanically_informed_spectral_skl"}
+    if set(families) != set(range(1, 6)) or set(families.values()) - allowed:
+        raise ValueError("Incomplete or unknown frozen detector family declaration")
+    onsets = pd.read_parquet(config.primary_onsets)
+    observed = onsets.set_index("fold").detector_family.to_dict()
+    if any(observed.get(fold) != family for fold, family in families.items()):
+        raise ValueError("Phase 7 onset cohort does not match the frozen detector manifest")
+    return families, payload
 
 
 def _scenario_data(config: Phase8Config, scenario: str) -> pd.DataFrame:
@@ -356,6 +392,36 @@ def _bootstrap(bearing: pd.DataFrame, config: Phase8Config) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _horizon_brier_summary(brier: pd.DataFrame, horizons: tuple[float, ...]) -> pd.DataFrame:
+    rows = []
+    keys = ["fold", "scenario", "model", "bearing_id"]
+    for values, group in brier.groupby(keys):
+        for horizon in horizons:
+            spacing = float(group.evaluation_time.sort_values().diff().median())
+            supported = (
+                group.evaluation_time.min() - spacing / 2
+                <= horizon
+                <= group.evaluation_time.max() + spacing / 2
+            )
+            nearest = (
+                group.iloc[(group.evaluation_time - horizon).abs().argmin()] if supported else None
+            )
+            rows.append(
+                {
+                    **dict(zip(keys, values, strict=True)),
+                    "requested_horizon_minutes": horizon,
+                    "actual_evaluation_time": float(nearest.evaluation_time)
+                    if nearest is not None
+                    else np.nan,
+                    "brier_score": float(nearest.brier_score) if nearest is not None else np.nan,
+                    "supported": supported,
+                    "scoring_unit": "landmark within bearing",
+                    "inferential_unit": "bearing",
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def run_phase8(
     config: Phase8Config,
     skip_plots: bool = False,
@@ -373,6 +439,9 @@ def run_phase8(
         config.evaluation_truth,
         config.forbidden_columns,
         config.survival_schema,
+        config.selected_detectors,
+        config.primary_onsets,
+        config.detector_candidates,
     ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
@@ -383,6 +452,7 @@ def run_phase8(
         config.expected_split_configuration_hash,
     )
     forbidden = forbidden_set(config.forbidden_columns)
+    detector_families, detector_manifest = _frozen_detector_contract(config)
     truth_guard = EvaluationTruthGuard(config.evaluation_truth)
     all_scenarios = config.primary_scenarios + config.secondary_scenarios
     if scenario_filter:
@@ -400,6 +470,7 @@ def run_phase8(
             "verified_hashes": hashes,
             "inputs": [str(path) for path in required],
             "evaluation_truth_policy": "guarded_until_all_test_predictions_frozen",
+            "detector_selection_contract": detector_manifest,
         },
     )
     candidate_tables = []
@@ -415,6 +486,7 @@ def run_phase8(
     selected_models = []
     cost_rows = []
     coefficient_rows = []
+    ph_diagnostic_tables = []
     for scenario in all_scenarios:
         data = _scenario_data(config, scenario)
         validate_outcome(data)
@@ -516,6 +588,11 @@ def run_phase8(
                     }
                 )
                 if model_name.startswith("cox_"):
+                    diagnostic = cox_ph_diagnostics(bundle, train)
+                    diagnostic.insert(0, "fold", fold)
+                    diagnostic.insert(1, "scenario", scenario)
+                    diagnostic.insert(2, "model", model_name)
+                    ph_diagnostic_tables.append(diagnostic)
                     for feature, coefficient in zip(
                         bundle.features, bundle.model.coef_, strict=True
                     ):
@@ -545,6 +622,10 @@ def run_phase8(
     horizons = pd.concat(horizon_tables, ignore_index=True)
     bearing = pd.concat(bearing_tables, ignore_index=True)
     brier = pd.concat(brier_tables, ignore_index=True)
+    ph_diagnostics = pd.concat(ph_diagnostic_tables, ignore_index=True)
+    for table in (predictions, curves, horizons, bearing, brier):
+        table["detector_family"] = table.fold.map(detector_families)
+    horizon_brier = _horizon_brier_summary(brier, config.prediction_horizons)
     truth_guard.freeze_predictions()
     truth = truth_guard.load()
     if truth_guard.access_count != 1:
@@ -599,10 +680,13 @@ def run_phase8(
         "fold_metrics": fold_metrics,
         "scenario_metrics": scenario_metrics,
         "horizon_metrics": horizons,
+        "brier_score_curves": brier,
+        "horizon_brier_scores": horizon_brier,
         "calibration_metrics": calibration,
         "system_coverage_metrics": system,
         "bootstrap_results": bootstrap,
         "cox_coefficients": pd.DataFrame(coefficient_rows),
+        "cox_ph_diagnostics": ph_diagnostics,
         "computational_costs": pd.DataFrame(cost_rows),
         "paired_differences": paired_differences,
         "paired_tests": paired_tests,
@@ -622,10 +706,13 @@ def run_phase8(
         "fold_metrics": "metrics/fold_metrics.parquet",
         "scenario_metrics": "metrics/scenario_metrics.parquet",
         "horizon_metrics": "metrics/horizon_metrics.parquet",
+        "brier_score_curves": "metrics/brier_score_curves.parquet",
+        "horizon_brier_scores": "metrics/horizon_brier_scores.parquet",
         "calibration_metrics": "metrics/calibration_metrics.parquet",
         "system_coverage_metrics": "metrics/system_coverage_metrics.parquet",
         "bootstrap_results": "statistics/bootstrap_results.parquet",
         "cox_coefficients": "interpretability/cox_coefficients.parquet",
+        "cox_ph_diagnostics": "diagnostics/cox_ph_diagnostics.parquet",
         "computational_costs": "computational/computational_costs.parquet",
         "paired_differences": "statistics/paired_differences.parquet",
         "paired_tests": "statistics/paired_tests.parquet",
@@ -645,12 +732,14 @@ def run_phase8(
         "primary_survival_model_comparison": scenario_metrics,
         "bearing_level_ibs_and_c_index": bearing,
         "calibration_results": calibration,
+        "horizon_specific_brier_scores": horizon_brier,
         "bootstrap_confidence_intervals": bootstrap,
         "computational_cost_comparison": pd.DataFrame(cost_rows),
         "paired_statistical_comparisons": paired_tests,
         "matched_support_rul_comparison": rul_comparison,
         "kaplan_meier_onset_summary": km_summary,
         "feature_importance_consensus": consensus,
+        "cox_proportional_hazards_diagnostics": ph_diagnostics,
     }.items():
         write_table_set(output / "tables", name, table)
     expected_model_count = len(folds) * len(all_scenarios) * 4
@@ -670,6 +759,12 @@ def run_phase8(
         "frozen_model_count": len(selected_models),
         "expected_frozen_model_count": expected_model_count,
         "previous_artifacts_modified": False,
+        "detector_selection_validation_only": True,
+        "detector_families_by_fold": detector_families,
+        "cox_ph_global_tests": int((ph_diagnostics.scope == "global").sum()),
+        "cox_ph_global_violations": int(
+            ((ph_diagnostics.scope == "global") & ph_diagnostics.evidence_against_ph).sum()
+        ),
     }
     duration = time.perf_counter() - started
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -683,6 +778,12 @@ def run_phase8(
         "survival_curve_rows": len(curves),
         "test_bearings": int(bearing.bearing_id.nunique()),
         "primary_detector_coverage": 1.0,
+        "detector_families_by_fold": detector_families,
+        "cox_ph_scenarios_with_evidence": ph_diagnostics.loc[
+            ph_diagnostics.evidence_against_ph, ["fold", "scenario", "model"]
+        ]
+        .drop_duplicates()
+        .to_dict("records"),
         "scenario_results": scenario_metrics.to_dict("records"),
     }
     atomic_json(output / "reports/phase8_validation.json", validation)

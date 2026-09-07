@@ -22,7 +22,11 @@ from xjtu_sy_tcc.rul.safety import (
 from xjtu_sy_tcc.survival.cohorts import fixed_horizon, landmarks, rate_censor
 from xjtu_sy_tcc.survival.detector import causal_aggregate, persistent_alarm, robust_normalize
 from xjtu_sy_tcc.survival.plotting import generate_figures
-from xjtu_sy_tcc.survival.spectral import binned_distribution, kl_divergence
+from xjtu_sy_tcc.survival.spectral import (
+    binned_distribution,
+    kl_divergence,
+    shaft_order_distribution,
+)
 from xjtu_sy_tcc.survival.trends import causal_trends
 
 
@@ -46,9 +50,13 @@ def run_phase7(config: Phase7Config, force=False):
     detector_root = config.detector_output
     survival_root = config.survival_output
     spectral_path = detector_root / "spectral/spectral_distributions.parquet"
+    required_spectral_column = f"mechanical_horizontal_bin_{config.spectral_bins - 1:02d}"
     if spectral_path.exists():
-        spectral = pd.read_parquet(spectral_path)
+        cached_spectral = pd.read_parquet(spectral_path)
+        spectral = cached_spectral if required_spectral_column in cached_spectral else None
     else:
+        spectral = None
+    if spectral is None:
         with ThreadPoolExecutor(max_workers=config.workers) as pool:
             rows = list(
                 pool.map(lambda row: _spectral_row(row, config), metadata.to_dict("records"))
@@ -61,16 +69,31 @@ def run_phase7(config: Phase7Config, force=False):
     selected_payload = []
     divergence_frames = []
     reference_rows = []
-    candidate_specs = list(
+    family_test_rows = []
+    spectral_specs = list(
         product(
             config.baseline_candidates,
-            config.divergence_candidates,
+            ("symmetric_kl",),
             config.channel_aggregations,
             config.causal_windows,
             config.threshold_candidates,
             config.persistence_candidates,
         )
     )
+    candidate_specs = []
+    for family in config.detector_families:
+        if family == "rms":
+            candidate_specs.extend(
+                (family, baseline, None, "maximum", window, threshold, persistence)
+                for baseline, window, threshold, persistence in product(
+                    config.baseline_candidates,
+                    config.causal_windows,
+                    config.threshold_candidates,
+                    config.persistence_candidates,
+                )
+            )
+        else:
+            candidate_specs.extend((family, *spec) for spec in spectral_specs)
     for fold in folds:
         subset_map = (
             {b: "train" for b in fold.train_bearings}
@@ -81,9 +104,7 @@ def run_phase7(config: Phase7Config, force=False):
         for order, spec in enumerate(candidate_specs, 1):
             results = []
             for bearing in (*fold.train_bearings, *fold.validation_bearings):
-                results.append(
-                    _detect_spectral(spectral[spectral.bearing_id == bearing], spec, config)
-                )
+                results.append(_detect_family(features, spectral, bearing, spec, config))
             validation = [x for x in results if subset_map[x["bearing_id"]] == "validation"]
             coverage = np.mean([x["detection_status"] == "detected" for x in validation])
             warning = np.mean([x.get("warning_fraction", 0) for x in validation])
@@ -99,34 +120,35 @@ def run_phase7(config: Phase7Config, force=False):
                     for x in validation
                 ]
             )
-            score = coverage - 0.4 * immediate - 0.2 * final_only - 0.02 * (spec[3] > 1)
+            score = coverage - 0.4 * immediate - 0.2 * final_only - 0.02 * (spec[4] > 1)
             record = {
                 "fold": fold.fold_id,
                 "candidate_id": order,
-                "baseline_acquisitions": spec[0],
-                "divergence_type": spec[1],
-                "channel_aggregation": spec[2],
-                "causal_window": spec[3],
-                "threshold": spec[4],
-                "persistence": spec[5],
+                "detector_family": spec[0],
+                "baseline_acquisitions": spec[1],
+                "divergence_type": spec[2],
+                "channel_aggregation": spec[3],
+                "causal_window": spec[4],
+                "threshold": spec[5],
+                "persistence": spec[6],
                 "validation_coverage": coverage,
                 "validation_warning_fraction": warning,
                 "immediate_post_calibration_rate": immediate,
                 "final_only_alarm_rate": final_only,
                 "selection_score": score,
+                "selection_data": "validation_only",
             }
             candidates.append(record)
             scored.append(record)
-        winner = sorted(
-            scored,
-            key=lambda x: (
-                -x["selection_score"],
-                -x["validation_coverage"],
-                x["causal_window"],
-                x["candidate_id"],
-            ),
-        )[0]
+        family_winners = [
+            _rank_detector_candidates([row for row in scored if row["detector_family"] == family])[
+                0
+            ]
+            for family in config.detector_families
+        ]
+        winner = _rank_detector_candidates(scored)[0]
         spec = (
+            winner["detector_family"],
             winner["baseline_acquisitions"],
             winner["divergence_type"],
             winner["channel_aggregation"],
@@ -137,20 +159,24 @@ def run_phase7(config: Phase7Config, force=False):
         selected_payload.append(
             {
                 **winner,
+                "selection_status": "frozen_before_test_application",
+                "family_sensitivity_winners": family_winners,
                 "training_bearings": list(fold.train_bearings),
                 "validation_bearings": list(fold.validation_bearings),
                 "test_bearings": list(fold.test_bearings),
             }
         )
         for bearing in (*fold.train_bearings, *fold.validation_bearings, *fold.test_bearings):
-            group = spectral[spectral.bearing_id == bearing]
-            result, trajectory, references = _detect_spectral(group, spec, config, details=True)
+            result, trajectory, references = _detect_family(
+                features, spectral, bearing, spec, config, details=True
+            )
             result.update(
                 {
                     "fold": fold.fold_id,
                     "subset": subset_map[bearing],
                     "selected_configuration_id": winner["candidate_id"],
-                    "detector_id": "spectral_kl",
+                    "detector_id": winner["detector_family"],
+                    "detector_family": winner["detector_family"],
                 }
             )
             all_onsets.append(result)
@@ -160,9 +186,44 @@ def run_phase7(config: Phase7Config, force=False):
             reference_rows.extend(
                 [{**r, "fold": fold.fold_id, "subset": subset_map[bearing]} for r in references]
             )
+        for family_winner in family_winners:
+            family_spec = (
+                family_winner["detector_family"],
+                family_winner["baseline_acquisitions"],
+                family_winner["divergence_type"],
+                family_winner["channel_aggregation"],
+                family_winner["causal_window"],
+                family_winner["threshold"],
+                family_winner["persistence"],
+            )
+            for bearing in fold.test_bearings:
+                family_result = _detect_family(features, spectral, bearing, family_spec, config)
+                family_result.update(
+                    {
+                        "fold": fold.fold_id,
+                        "subset": "test",
+                        "detector_family": family_winner["detector_family"],
+                        "selected_configuration_id": family_winner["candidate_id"],
+                        "selection_data": "validation_only",
+                    }
+                )
+                family_test_rows.append(family_result)
     onsets = pd.DataFrame(all_onsets)
     test = onsets[onsets.subset == "test"].copy()
-    rms_onsets = _rms_baseline(features, folds, config)
+    family_test = pd.DataFrame(family_test_rows)
+    family_summary = (
+        family_test.groupby("detector_family", as_index=False)
+        .agg(
+            test_bearings=("bearing_id", "nunique"),
+            detected_bearings=("detection_status", lambda value: int((value == "detected").sum())),
+            median_consumed_life_fraction=("consumed_life_fraction", "median"),
+            median_warning_fraction=("warning_fraction", "median"),
+        )
+        .assign(
+            test_detection_coverage=lambda table: table.detected_bearings / table.test_bearings,
+            role="predeclared_sensitivity_not_selection",
+        )
+    )
     retrospective = pd.read_parquet(config.retrospective_onsets).query("subset == 'test'")[
         ["fold", "bearing_id", "estimated_onset_status", "estimated_onset_sequence_index"]
     ]
@@ -178,14 +239,25 @@ def run_phase7(config: Phase7Config, force=False):
         pd.concat(divergence_frames, ignore_index=True),
     )
     atomic_table(detector_root / "detector/detector_candidates.parquet", pd.DataFrame(candidates))
-    atomic_json(detector_root / "detector/selected_detectors.json", {"detectors": selected_payload})
+    atomic_json(
+        detector_root / "detector/selected_detectors.json",
+        {
+            "selection_data": "validation_only",
+            "frozen_before_test_application": True,
+            "test_metrics_used_for_selection": False,
+            "analysis_policy": (
+                "Primary detector selected across predeclared families; family-specific test "
+                "results are sensitivity analyses."
+            ),
+            "detectors": selected_payload,
+        },
+    )
     atomic_table(detector_root / "detector/causal_onsets.parquet", onsets)
     atomic_table(detector_root / "detector/test_causal_onsets.parquet", test)
     atomic_table(detector_root / "comparison/causal_vs_pelt.parquet", comparison)
-    atomic_table(
-        detector_root / "comparison/spectral_vs_rms.parquet",
-        test.merge(rms_onsets, on=["fold", "bearing_id"], suffixes=("_spectral", "_rms")),
-    )
+    atomic_table(detector_root / "comparison/detector_family_test_results.parquet", family_test)
+    atomic_table(detector_root / "comparison/detector_family_test_summary.parquet", family_summary)
+    atomic_table(detector_root / "comparison/spectral_vs_rms.parquet", family_test)
     trend_frames = []
     for fold in folds:
         subset_map = (
@@ -204,10 +276,11 @@ def run_phase7(config: Phase7Config, force=False):
         trends["fold"] = fold.fold_id
         trends["subset"] = trends.bearing_id.map(subset_map)
         trend_frames.append(trends)
-    trends = pd.concat(trend_frames, ignore_index=True).drop(
-        columns=["rul_minutes", "file_path", "file_name"], errors="ignore"
+    trends = pd.concat(trend_frames, ignore_index=True)
+    atomic_table(
+        survival_root / "causal_features/causal_trend_features.parquet",
+        trends.drop(columns=["rul_minutes", "file_path", "file_name"], errors="ignore"),
     )
-    atomic_table(survival_root / "causal_features/causal_trend_features.parquet", trends)
     full, excluded = landmarks(trends, onsets, config.landmark_stride, config.minimum_followup)
     onset_cohort = (
         full.sort_values("sequence_index")
@@ -246,7 +319,21 @@ def run_phase7(config: Phase7Config, force=False):
     atomic_table(survival_root / "evaluation/landmark_truth.parquet", truth)
     atomic_json(
         survival_root / "censoring/censoring_manifest.json",
-        {"scenarios": rate_manifest.to_dict("records")},
+        {
+            "dataset_natural_censoring": False,
+            "event_definition": (
+                "experimental end-of-life / run-to-failure endpoint of the XJTU-SY experiment"
+            ),
+            "fixed_horizon_policy": (
+                "administrative censoring introduced for operational-horizon evaluation"
+            ),
+            "fixed_horizons_minutes": list(config.fixed_horizons),
+            "target_censoring_policy": (
+                "predeclared sensitivity analysis; thresholds estimated from training landmarks "
+                "only"
+            ),
+            "scenarios": rate_manifest.to_dict("records"),
+        },
     )
     _schemas(survival_root, model_full, truth)
     validation = _validate(test, spectral, full, model_full, config)
@@ -258,6 +345,10 @@ def run_phase7(config: Phase7Config, force=False):
         "candidate_count": len(candidates),
         "test_detection_count": int((test.detection_status == "detected").sum()),
         "test_non_detection_count": int((test.detection_status != "detected").sum()),
+        "selected_detector_families_by_fold": {
+            str(item["fold"]): item["detector_family"] for item in selected_payload
+        },
+        "detector_family_sensitivity": family_summary.to_dict("records"),
     }
     survival_report = {
         **validation,
@@ -316,29 +407,65 @@ def _spectral_row(row, c):
             c.epsilon,
         )
         result.update({f"{channel}_bin_{i:02d}": v for i, v in enumerate(distribution)})
+        mechanical = shaft_order_distribution(
+            values[:, index],
+            row["sampling_frequency_hz"],
+            c.welch_nperseg,
+            c.welch_overlap,
+            row["rotation_rpm"],
+            c.mechanical_max_order,
+            c.spectral_bins,
+            c.epsilon,
+        )
+        result.update({f"mechanical_{channel}_bin_{i:02d}": v for i, v in enumerate(mechanical)})
     return result
 
 
 def _validate_spectral(table, bins):
-    for channel in ("horizontal", "vertical"):
-        x = table[[f"{channel}_bin_{i:02d}" for i in range(bins)]].to_numpy()
+    for prefix in ("horizontal", "vertical", "mechanical_horizontal", "mechanical_vertical"):
+        x = table[[f"{prefix}_bin_{i:02d}" for i in range(bins)]].to_numpy()
         if np.any(x < 0) or not np.isfinite(x).all() or not np.allclose(x.sum(1), 1, atol=1e-6):
             raise ValueError("Invalid spectral cache")
 
 
-def _detect_spectral(group, spec, c, details=False):
+def _rank_detector_candidates(rows):
+    return sorted(
+        rows,
+        key=lambda row: (
+            -row["selection_score"],
+            -row["validation_coverage"],
+            row["causal_window"],
+            row["candidate_id"],
+        ),
+    )
+
+
+def _detect_family(features, spectral, bearing, spec, c, details=False):
+    family = spec[0]
+    if family == "rms":
+        return _detect_rms(features[features.bearing_id == bearing], spec[1:], c, details=details)
+    return _detect_spectral(
+        spectral[spectral.bearing_id == bearing], spec[1:], c, details=details, family=family
+    )
+
+
+def _detect_spectral(group, spec, c, details=False, family="uniform_spectral_skl"):
     baseline, kind, aggregation, window, threshold, persistence = spec
     g = group.sort_values("sequence_index")
     channels = {}
     refs = []
     for channel in ("horizontal", "vertical"):
-        x = g[[f"{channel}_bin_{i:02d}" for i in range(c.spectral_bins)]].to_numpy()
+        prefix = (
+            f"mechanical_{channel}" if family == "mechanically_informed_spectral_skl" else channel
+        )
+        x = g[[f"{prefix}_bin_{i:02d}" for i in range(c.spectral_bins)]].to_numpy()
         reference = np.median(x[:baseline], axis=0)
         reference /= reference.sum()
         refs.append(
             {
                 "bearing_id": g.bearing_id.iloc[0],
                 "channel": channel,
+                "detector_family": family,
                 "baseline_acquisitions": baseline,
                 "distribution": reference.astype("float32").tolist(),
             }
@@ -404,6 +531,82 @@ def _detect_spectral(group, spec, c, details=False):
     trajectory["normalized_divergence"] = normalized
     trajectory["effective_window"] = np.minimum(np.arange(len(g)) + 1, window)
     trajectory["calibration_interval"] = np.arange(len(g)) < baseline
+    return result, trajectory, refs
+
+
+def _detect_rms(group, spec, c, details=False):
+    baseline, _kind, aggregation, window, threshold, persistence = spec
+    g = group.sort_values("sequence_index")
+    channel_values = {
+        channel: g[f"{channel}_rms"].to_numpy(float) for channel in ("horizontal", "vertical")
+    }
+    combined = (
+        np.maximum(channel_values["horizontal"], channel_values["vertical"])
+        if aggregation == "maximum"
+        else np.mean(list(channel_values.values()), axis=0)
+    )
+    aggregated = causal_aggregate(combined, window, "median")
+    normalized, center, mad = robust_normalize(aggregated, baseline, c.epsilon)
+    alarm = persistent_alarm(
+        normalized,
+        baseline,
+        threshold,
+        persistence,
+        c.maximum_gap,
+        c.minimum_post_alarm,
+        c.minimum_effect,
+    )
+    index = alarm["alarm_confirmation_index"]
+    result = {
+        "condition_id": int(g.condition_id.iloc[0]),
+        "bearing_id": g.bearing_id.iloc[0],
+        "detection_status": alarm.pop("status"),
+        "baseline_acquisitions": baseline,
+        **alarm,
+        "alarm_elapsed_minutes": float(g.iloc[index].elapsed_minutes)
+        if index is not None
+        else np.nan,
+        "rul_at_alarm": float(g.iloc[index].rul_minutes) if index is not None else np.nan,
+        "consumed_life_fraction": float(index / (len(g) - 1))
+        if index is not None and len(g) > 1
+        else np.nan,
+        "baseline_median": center,
+        "baseline_mad": mad,
+        "post_alarm_robust_effect": float(np.median(normalized[index:]))
+        if index is not None
+        else np.nan,
+        "warning_fraction": float((len(g) - 1 - index) / (len(g) - 1))
+        if index is not None and len(g) > 1
+        else 0.0,
+    }
+    if not details:
+        return result
+    trajectory = g[
+        [
+            "condition_id",
+            "bearing_id",
+            "acquisition_number",
+            "sequence_index",
+            "elapsed_minutes",
+            "rul_minutes",
+        ]
+    ].copy()
+    trajectory["horizontal_divergence"] = channel_values["horizontal"]
+    trajectory["vertical_divergence"] = channel_values["vertical"]
+    trajectory["raw_combined_divergence"] = combined
+    trajectory["causal_aggregated_divergence"] = aggregated
+    trajectory["normalized_divergence"] = normalized
+    trajectory["effective_window"] = np.minimum(np.arange(len(g)) + 1, window)
+    trajectory["calibration_interval"] = np.arange(len(g)) < baseline
+    refs = [
+        {
+            "bearing_id": g.bearing_id.iloc[0],
+            "channel": "combined",
+            "detector_family": "rms",
+            "baseline_acquisitions": baseline,
+            "distribution": [],
+        }
+    ]
     return result, trajectory, refs
 
 
@@ -553,12 +756,14 @@ def _complete_cached_outputs(c, report):
     selected = json.loads((c.detector_output / "detector/selected_detectors.json").read_text())[
         "detectors"
     ]
+    features = pd.read_parquet(c.feature_table)
     sensitivity_rows = []
     for item in selected:
         for window, threshold, persistence in product(
             c.causal_windows, c.threshold_candidates, c.persistence_candidates
         ):
             spec = (
+                item["detector_family"],
                 item["baseline_acquisitions"],
                 item["divergence_type"],
                 item["channel_aggregation"],
@@ -567,7 +772,7 @@ def _complete_cached_outputs(c, report):
                 persistence,
             )
             for bearing in onsets[onsets.fold == item["fold"]].bearing_id:
-                detected = _detect_spectral(spectral[spectral.bearing_id == bearing], spec, c)
+                detected = _detect_family(features, spectral, bearing, spec, c)
                 sensitivity_rows.append(
                     {
                         "fold": item["fold"],

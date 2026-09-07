@@ -30,6 +30,8 @@ class Phase7Config:
     frequency_min_hz: float
     frequency_max_hz: float
     spectral_bins: int
+    mechanical_max_order: float
+    detector_families: tuple[str, ...]
     epsilon: float
     workers: int
     baseline_candidates: tuple[int, ...]
@@ -81,6 +83,7 @@ def load_phase7_config(path: Path):
         "trend_windows",
         "fixed_horizons",
         "target_censoring_rates",
+        "detector_families",
     )
     for k in tuple_keys:
         raw[k] = tuple(raw[k])
@@ -99,6 +102,11 @@ def load_phase7_config(path: Path):
         raw["channel_aggregations"]
     ) - {"mean", "maximum"}:
         raise ConfigurationError("Unknown detector option")
+    allowed_families = {"rms", "uniform_spectral_skl", "mechanically_informed_spectral_skl"}
+    if set(raw["detector_families"]) != allowed_families:
+        raise ConfigurationError("All three predeclared detector families must be evaluated")
+    if raw["mechanical_max_order"] <= 1:
+        raise ConfigurationError("Mechanical order range must exceed one shaft order")
     if (
         paths["detector_output"].name != "causal_degradation"
         or paths["survival_output"].name != "survival"

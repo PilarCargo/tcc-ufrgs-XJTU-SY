@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from xjtu_sy_tcc.survival_models.analysis import cox_ph_diagnostics
 from xjtu_sy_tcc.survival_models.metrics import (
     bearing_metrics,
     horizon_predictions,
@@ -112,3 +113,15 @@ def test_candidate_ranking_tie_breaks_deterministically():
     )
     ranked = rank_candidates(records)
     assert ranked.loc[ranked.selected, "candidate_id"].item() == 2
+
+
+def test_cox_ph_diagnostics_report_global_and_feature_clustered_tests():
+    data = frame()
+    grid = np.linspace(1.1, 6.9, 6)
+    bundle = fit_cox(data, ["x", "z"], grid, 1.0, 42, "cox_causal_features")
+    diagnostics = cox_ph_diagnostics(bundle, data, permutations=19)
+    assert diagnostics.iloc[0].scope == "global"
+    assert set(diagnostics.loc[diagnostics.scope == "feature", "feature"]) == {"x", "z"}
+    assert diagnostics.resampling_unit.eq("bearing").all()
+    assert diagnostics.independent_bearings.eq(3).all()
+    assert diagnostics.p_value.between(0, 1).all()

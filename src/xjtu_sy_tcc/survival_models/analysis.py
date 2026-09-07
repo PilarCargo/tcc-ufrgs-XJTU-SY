@@ -11,10 +11,94 @@ from xjtu_sy_tcc.consolidation.statistics import holm_adjust
 
 PRIMARY_COMPARISONS = (
     ("cox_context_only", "landmark_km_baseline"),
+    ("cox_causal_features", "landmark_km_baseline"),
+    ("random_survival_forest", "landmark_km_baseline"),
     ("cox_causal_features", "cox_context_only"),
     ("random_survival_forest", "cox_context_only"),
     ("random_survival_forest", "cox_causal_features"),
 )
+
+
+def cox_ph_diagnostics(bundle, train: pd.DataFrame, permutations: int = 499) -> pd.DataFrame:
+    """Cluster-aware Schoenfeld-residual PH diagnostic on the training bearings.
+
+    Event-level residuals are collapsed to one vector per bearing before permutation, so repeated
+    landmarks do not inflate the inferential sample size. The test is diagnostic, not a causal
+    interpretation of coefficients.
+    """
+    features = list(bundle.features)
+    x = train[features].to_numpy(float)
+    if bundle.scaler is not None:
+        x = bundle.scaler.transform(train[features])
+    time = train.duration_minutes.to_numpy(float)
+    event = train.event_observed.to_numpy(bool)
+    risk = np.exp(np.clip(bundle.model.predict(x), -50, 50))
+    residuals = []
+    for index in np.flatnonzero(event):
+        at_risk = time >= time[index]
+        expected = np.average(x[at_risk], axis=0, weights=risk[at_risk])
+        residuals.append(
+            {
+                "bearing_id": train.iloc[index].bearing_id,
+                "log_event_time": np.log(time[index]),
+                **{
+                    feature: value
+                    for feature, value in zip(features, x[index] - expected, strict=True)
+                },
+            }
+        )
+    events = pd.DataFrame(residuals)
+    clustered = events.groupby("bearing_id", as_index=False).mean(numeric_only=True)
+    n = len(clustered)
+    rng = np.random.default_rng(1847)
+
+    def absolute_correlation(left, right):
+        if np.unique(left).size < 2 or np.unique(right).size < 2:
+            return 0.0
+        value = pd.Series(left).corr(pd.Series(right), method="spearman")
+        return abs(float(value)) if np.isfinite(value) else 0.0
+
+    observed = np.array(
+        [absolute_correlation(clustered[f].to_numpy(), clustered.log_event_time) for f in features]
+    )
+    null = np.empty((permutations, len(features)))
+    times = clustered.log_event_time.to_numpy()
+    for iteration in range(permutations):
+        permuted = rng.permutation(times)
+        null[iteration] = [
+            absolute_correlation(clustered[f].to_numpy(), permuted) for f in features
+        ]
+    feature_p = (1 + (null >= observed).sum(axis=0)) / (permutations + 1)
+    global_stat = float(np.nanmax(observed))
+    global_p = float((1 + (np.nanmax(null, axis=1) >= global_stat).sum()) / (permutations + 1))
+    rows = [
+        {
+            "scope": "global",
+            "feature": "__global__",
+            "absolute_spearman": global_stat,
+            "p_value": global_p,
+            "evidence_against_ph": global_p < 0.05,
+            "independent_bearings": n,
+            "event_landmarks": len(events),
+            "resampling_unit": "bearing",
+            "method": "max-statistic bearing-level permutation of clustered Schoenfeld residuals",
+        }
+    ]
+    rows.extend(
+        {
+            "scope": "feature",
+            "feature": feature,
+            "absolute_spearman": float(statistic),
+            "p_value": float(p_value),
+            "evidence_against_ph": p_value < 0.05,
+            "independent_bearings": n,
+            "event_landmarks": len(events),
+            "resampling_unit": "bearing",
+            "method": "bearing-level permutation of clustered Schoenfeld residuals",
+        }
+        for feature, statistic, p_value in zip(features, observed, feature_p, strict=True)
+    )
+    return pd.DataFrame(rows)
 
 
 def paired_survival_comparisons(bearing: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:

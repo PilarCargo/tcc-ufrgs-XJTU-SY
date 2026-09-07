@@ -21,6 +21,16 @@ def binned_distribution(signal, fs, nperseg, overlap, minimum, maximum, bins, ep
     return values.astype("float32")
 
 
+def shaft_order_distribution(signal, fs, nperseg, overlap, rpm, max_order, bins, epsilon):
+    """Welch power in shaft-order bins; this is mechanical context, not a fault-frequency claim."""
+    if rpm <= 0 or max_order <= 1:
+        raise ValueError("Positive shaft speed and a valid order range are required")
+    shaft_hz = rpm / 60.0
+    return binned_distribution(
+        signal, fs, nperseg, overlap, 0.0, shaft_hz * max_order, bins, epsilon
+    )
+
+
 def validate_distribution(value, tolerance=1e-6):
     x = np.asarray(value, float)
     if (
