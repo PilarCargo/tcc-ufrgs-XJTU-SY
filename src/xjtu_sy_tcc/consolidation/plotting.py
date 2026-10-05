@@ -43,11 +43,24 @@ def generate_figures(
         ("computational/performance_training", costs, "training_seconds", "macro_mae"),
     ]
     for name, table, x, y in specs:
-        fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
-        data = table.groupby(x, as_index=False)[y].mean()
-        ax.bar(data[x].astype(str), data[y], color="0.35")
-        ax.set(xlabel=str(x).replace("_", " "), ylabel=str(y).replace("_", " "))
-        ax.tick_params(axis="x", rotation=35)
+        data = table.groupby(x, as_index=False, sort=False)[y].mean()
+        if name == "features/consensus":
+            count += _save_consensus(data, root / name, config)
+            manifest.append({"figure": name, "source_columns": [x, y]})
+            continue
+        if name in {
+            "performance/native_macro_mae",
+            "bearing/model_minus_dummy",
+        }:
+            count += _save_default_comparison(data, x, y, root / name, config)
+            count += _save_portuguese_comparison(data, x, y, root / f"{name}_br", config)
+            manifest.append({"figure": name, "source_columns": [x, y]})
+            continue
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
+            ax.bar(data[x].astype(str), data[y], color="0.35")
+            ax.set(xlabel=str(x).replace("_", " "), ylabel=str(y).replace("_", " "))
+            ax.tick_params(axis="x", rotation=35)
         count += _save(fig, root / name, config)
         manifest.append({"figure": name, "source_columns": [x, y]})
     pivot = bearing.pivot(index="bearing_id", columns="experiment", values="mae")
@@ -89,6 +102,80 @@ def generate_figures(
         count += _save(fig, root / f"performance/representative_{bearing_id}", config)
     (root / "figure_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return count
+
+
+def _save_consensus(data, path, config):
+    ordered = data.sort_values("mean_normalized_rank", ascending=True, kind="stable")
+    figure, axis = plt.subplots(
+        figsize=(10, max(6.0, 0.42 * len(ordered))), constrained_layout=True
+    )
+    labels = ordered["feature"].astype(str).str.replace("_", " ")
+    axis.barh(labels, ordered["mean_normalized_rank"], color="tab:blue")
+    axis.set(xlabel="Posto normalizado médio", ylabel="Atributo")
+    axis.grid(axis="x", alpha=0.25)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    return _save(figure, path, config)
+
+
+def _save_default_comparison(data, x, y, path, config):
+    ordered = data.sort_values(y, kind="stable")
+    figure, axis = plt.subplots(
+        figsize=(10, max(5.0, 0.45 * len(ordered))), constrained_layout=True
+    )
+    labels = ordered[x].astype(str).str.replace("_", " ")
+    axis.barh(labels, ordered[y], color="0.35")
+    axis.invert_yaxis()
+    axis.set(xlabel=str(y).replace("_", " "), ylabel=str(x).replace("_", " "))
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    if path.name == "model_minus_dummy":
+        axis.axvline(0.0, color="black", linewidth=0.8)
+    return _save(figure, path, config)
+
+
+def _save_portuguese_comparison(data, x, y, path, config):
+    """Save the report-ready Portuguese comparison without title or frame."""
+    labels = {
+        "dummy_median": "Dummy — mediana",
+        "selected_features_lstm_k1_ablation": "LSTM — ablação k=1",
+        "selected_features_plus_time_lstm": "LSTM — vibração + tempo",
+        "time_only_ridge": "Ridge — apenas tempo",
+        "selected_features_plus_time_ridge": "Ridge — vibração + tempo",
+        "selected_features_ridge": "Ridge — vibração",
+        "selected_features_lstm": "LSTM — contexto temporal",
+        "all_features_ridge": "Ridge — todos os atributos",
+        "selected_features_hist_gradient_boosting": "HistGradientBoosting — selecionados",
+        "selected_features_random_forest": "Random Forest — selecionados",
+        "all_features_random_forest": "Random Forest — todos",
+        "all_features_hist_gradient_boosting": "HistGradientBoosting — todos",
+        "condition_median_countdown": "Contagem regressiva — vida mediana por condição",
+        "condition_lifetime_countdown": "Contagem regressiva — vida mediana por condição",
+    }
+    ordered = data.sort_values(y, kind="stable").reset_index(drop=True)
+    bar_labels = ordered[x].astype(str).map(labels).fillna(ordered[x].astype(str))
+    colors = ["#4C9BD6"] * len(ordered)
+    if colors:
+        colors[0] = "#0B4F8A"
+    figure, axis = plt.subplots(
+        figsize=(10, max(5.0, 0.45 * len(ordered))), constrained_layout=True
+    )
+    axis.barh(bar_labels, ordered[y], color=colors)
+    axis.invert_yaxis()
+    if path.name == "native_macro_mae_br":
+        axis.set(xlabel="Macro MAE por rolamento (min; menor é melhor)", ylabel="Modelo")
+    else:
+        axis.set(
+            xlabel=(
+                "Diferença média pareada de MAE (min; menor é melhor; negativo favorece o modelo)"
+            ),
+            ylabel="Modelo candidato",
+        )
+        axis.axvline(0.0, color="black", linewidth=0.8)
+    axis.grid(axis="x", alpha=0.25)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    return _save(figure, path, config)
 
 
 def _save(fig, path, config):

@@ -100,6 +100,11 @@ def generate_phase3_figures(
         count += _save(figure, bearing_directory / bearing, config)
 
     summary_directory = config.figure_directory / "degradation" / "summary"
+    count += _health_indicator_condition_comparison(
+        health,
+        summary_directory / "comparacao_health_indicator_condicoes",
+        config,
+    )
     prognostic_directory = config.figure_directory / "prognostics"
     test_onsets = onsets[onsets["subset"] == "test"].copy()
     count += _bar_figure(
@@ -191,6 +196,49 @@ def generate_phase3_figures(
     return count
 
 
+def _health_indicator_condition_comparison(
+    health: pd.DataFrame, path: Path, config: Phase3Config
+) -> int:
+    """Compare representative bearings while labeling panels by operating condition."""
+    representatives = (("Bearing1_1", 1), ("Bearing2_1", 2), ("Bearing3_1", 3))
+    figure, axes = plt.subplots(1, 3, figsize=(18, 5.6), constrained_layout=True)
+    for index, (axis, (bearing, condition)) in enumerate(zip(axes, representatives, strict=True)):
+        indicator = health[
+            (health["fold"] == 1)
+            & (health["subset"] == "test")
+            & (health["bearing_id"] == bearing)
+        ].sort_values("sequence_index")
+        life_fraction = np.linspace(0.0, 1.0, len(indicator))
+        axis.plot(
+            life_fraction,
+            indicator["baseline_centered_health_indicator"],
+            color="#8EC0E8",
+            linewidth=0.8,
+            alpha=0.8,
+            label="HI bruto centralizado",
+        )
+        axis.plot(
+            life_fraction,
+            indicator["smoothed_health_indicator"],
+            color="#E66100",
+            linewidth=1.8,
+            label="HI suavizado",
+        )
+        axis.axvspan(0.8, 1.0, color="#F2D675", alpha=0.25, label="20% finais")
+        axis.axvline(
+            1.0, color="black", linestyle=":", linewidth=1.4, label="Endpoint experimental"
+        )
+        axis.set(
+            title=f"Condição operacional {condition}",
+            xlabel="Fração da vida experimental",
+            ylabel="Indicador de saúde (PC1 centralizada)" if index == 0 else None,
+        )
+        axis.grid(alpha=0.25)
+    handles, labels = axes[0].get_legend_handles_labels()
+    figure.legend(handles, labels, loc="outside lower center", ncol=4, frameon=False)
+    return _save(figure, path, config)
+
+
 def _bar_figure(data, x, y, title, ylabel, path, config) -> int:
     figure, axis = plt.subplots(figsize=(10, 4.8), constrained_layout=True)
     available = data.dropna(subset=[y])
@@ -198,7 +246,36 @@ def _bar_figure(data, x, y, title, ylabel, path, config) -> int:
     axis.set(title=title, xlabel=x.replace("_", " ").title(), ylabel=ylabel)
     axis.tick_params(axis="x", rotation=75 if len(available) > 10 else 0)
     axis.grid(axis="y", alpha=0.25)
-    return _save(figure, path, config)
+    if path.name == "estimated_onset_life_fraction":
+        axis.set(title=None, xlabel="Rolamento", ylabel="Fração da vida consumida (-)")
+        axis.set_ylim(0.0, 1.0)
+        for spine in axis.spines.values():
+            spine.set_visible(False)
+    count = _save(figure, path, config)
+    if path.name == "estimated_onset_life_fraction":
+        report_figure, report_axis = plt.subplots(figsize=(10, 4.8), constrained_layout=True)
+        report_axis.bar(available[x].astype(str), available[y].astype(float), color="#4C9BD6")
+        report_axis.set(xlabel="Rolamento", ylabel="Fração da vida consumida (-)")
+        report_axis.set_ylim(0.0, 1.0)
+        report_axis.tick_params(axis="x", rotation=75 if len(available) > 10 else 0)
+        report_axis.grid(axis="y", alpha=0.25)
+        for spine in report_axis.spines.values():
+            spine.set_visible(False)
+        count += _save(report_figure, path.with_name(f"{path.name}_br"), config)
+    elif path.name == "pca_explained_variance":
+        report_figure, report_axis = plt.subplots(figsize=(10, 4.8), constrained_layout=True)
+        percentages = available[y].astype(float) * 100.0
+        bars = report_axis.bar(
+            available[x].astype(str), percentages, color="#4C9BD6"
+        )
+        report_axis.set(xlabel="Partição", ylabel="Variância explicada pela PC1 (%)")
+        report_axis.set_ylim(0.0, 100.0)
+        report_axis.grid(axis="y", alpha=0.25)
+        report_axis.bar_label(bars, fmt="%.2f%%", padding=3)
+        for spine in report_axis.spines.values():
+            spine.set_visible(False)
+        count += _save(report_figure, path.with_name(f"{path.name}_br"), config)
+    return count
 
 
 def _box_figure(data, x, y, title, ylabel, path, config) -> int:

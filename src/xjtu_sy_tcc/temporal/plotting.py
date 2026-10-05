@@ -136,6 +136,27 @@ def generate_figures(
 
 def _bar(table, x, y, title, path, config, aggregate=False):
     data = table.groupby(x, as_index=False)[y].mean() if aggregate else table
+    if path.name == "feature_occlusion":
+        ordered = data.sort_values(y, ascending=True, kind="stable")
+        model_labels = {
+            "selected_features_lstm": "LSTM com contexto temporal",
+            "selected_features_plus_time_lstm": "LSTM com vibração + tempo",
+            "selected_features_lstm_k1_ablation": "LSTM, ablação k=1",
+        }
+        labels = ordered[x].astype(str).str.replace("_", " ")
+        if "experiment" in ordered:
+            labels = (
+                labels
+                + " — "
+                + ordered["experiment"].map(model_labels).fillna(ordered["experiment"].astype(str))
+            )
+        fig, ax = plt.subplots(figsize=(10, max(5.0, 0.42 * len(ordered))), constrained_layout=True)
+        ax.barh(labels, ordered[y], color="tab:blue")
+        ax.set(xlabel="Aumento do macro MAE por oclusão (min)", ylabel="Atributo")
+        ax.grid(axis="x", alpha=0.25)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        return _save(fig, path, config)
     fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
     ax.bar(data[x].astype(str), data[y], color="0.35")
     ax.set(title=title, ylabel=y.replace("_", " "))

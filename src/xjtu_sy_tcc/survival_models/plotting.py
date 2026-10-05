@@ -94,21 +94,74 @@ def generate_phase8_figures(output: Path, dpi: int = 200, pdf: bool = True) -> i
         "predictions/landmark_predictions.parquet",
     )
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(10, 6))
     pooled = km[km.condition == "pooled"]
     for fold, group in pooled.groupby("fold"):
         ax.step(
             group.evaluation_time,
             group.survival_probability,
             where="post",
-            label=f"Fold {fold}",
+            label=f"Partição {fold}",
         )
-    ax.set(xlabel="Minutes after causal estimated degradation onset", ylabel="Survival probability")
-    ax.legend()
+    ax.set(
+        xlabel="Minutos após o início estimado da degradação",
+        ylabel="Probabilidade de sobrevivência",
+        ylim=(0.0, 1.0),
+    )
+    ax.legend(title="Partição")
+    ax.grid(alpha=0.25)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     save(
         fig,
         "survival_curves/kaplan_meier_onset.png",
         "predictions/kaplan_meier_onset_curves.parquet",
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    representative_bearings = ("Bearing1_1", "Bearing2_1", "Bearing3_1")
+    rsf_predictions = predictions[
+        (predictions.scenario == "full_event")
+        & (predictions.model == "random_survival_forest")
+        & predictions.bearing_id.isin(representative_bearings)
+        & (predictions.time_since_causal_onset == 0)
+    ]
+    selected_ids = rsf_predictions.set_index("bearing_id").landmark_id.to_dict()
+    curves = pd.read_parquet(output / "predictions/survival_curves.parquet")
+    for bearing in representative_bearings:
+        landmark_id = selected_ids[bearing]
+        curve = curves[
+            (curves.scenario == "full_event")
+            & (curves.model == "random_survival_forest")
+            & (curves.landmark_id == landmark_id)
+        ].sort_values("evaluation_time")
+        condition = int(curve.condition_id.iloc[0])
+        line = ax.step(
+            curve.evaluation_time,
+            curve.survival_probability,
+            where="post",
+            linewidth=2,
+            label=f"{bearing} (condição {condition})",
+        )[0]
+        observed = float(
+            rsf_predictions.loc[
+                rsf_predictions.landmark_id == landmark_id, "true_time_to_failure_minutes"
+            ].iloc[0]
+        )
+        ax.axvline(observed, color=line.get_color(), linestyle=":", linewidth=1.5)
+    ax.set(
+        xlabel="Minutos após o marco temporal no início estimado da degradação",
+        ylabel="Probabilidade de sobrevivência",
+        ylim=(0.0, 1.0),
+    )
+    ax.legend(title="Curva; pontilhado = término experimental observado")
+    ax.grid(alpha=0.25)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    save(
+        fig,
+        "survival_curves/curvas_sobrevivencia_rsf.png",
+        "predictions/survival_curves.parquet",
     )
 
     fig, ax = plt.subplots(figsize=(8, 5))

@@ -166,6 +166,17 @@ def generate_phase4_figures(
 
 
 def _bar(data, x, y, title, ylabel, path, config):
+    if path.name == "feature_importance":
+        ordered = data.sort_values(y, ascending=True, kind="stable")
+        figure, axis = plt.subplots(
+            figsize=(10, max(6.0, 0.38 * len(ordered))), constrained_layout=True
+        )
+        axis.barh(ordered[x].astype(str), ordered[y].astype(float), color="tab:blue")
+        axis.set(xlabel="Importância descritiva combinada", ylabel="Atributo")
+        axis.grid(axis="x", alpha=0.25)
+        for spine in axis.spines.values():
+            spine.set_visible(False)
+        return _save(figure, path, config)
     figure, axis = plt.subplots(figsize=(10, 5), constrained_layout=True)
     axis.bar(data[x].astype(str), data[y].astype(float), color="tab:blue")
     axis.set(title=title, xlabel=x.replace("_", " ").title(), ylabel=ylabel)
