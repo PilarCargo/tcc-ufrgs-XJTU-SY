@@ -226,7 +226,11 @@ def _health_indicator_condition_comparison(
         )
         axis.axvspan(0.8, 1.0, color="#F2D675", alpha=0.25, label="20% finais")
         axis.axvline(
-            1.0, color="black", linestyle=":", linewidth=1.4, label="Endpoint experimental"
+            1.0,
+            color="black",
+            linestyle=":",
+            linewidth=1.4,
+            label="Término experimental",
         )
         axis.set(
             title=f"Condição operacional {condition}",
